@@ -290,3 +290,22 @@ async def test_a_plain_budget_stop_is_still_a_plain_stop(ctx, node_factory):
     out = solver._stop(node, ctx, "attempt cap reached")
     assert out.status == "stopped"
     assert "STOPPED" in out.final_report
+
+
+@pytest.mark.parametrize("text,is_question", [
+    ("which SMTP server and which admin address should the report go to?", True),
+    ("actual admin email address must be provided", True),
+    ("SMTP relay or mail server configuration must be available on the host", True),
+    ("none — all behavior is determinable from the stated requirements", False),
+    ("none", False),
+    ("N/A", False),
+    ("nothing needed", False),
+    ("no human input needed", False),
+    ("not applicable", False),
+    ("", False),
+])
+def test_needs_human_prefix_used_to_say_nothing_is_not_a_question(text, is_question):
+    """Models write 'NEEDS HUMAN: none'. Treating that as a real question would block a done
+    verdict on a non-question — worse than the gap the prefix was added to close."""
+    from done.planner import _is_real_question
+    assert _is_real_question(text) is is_question

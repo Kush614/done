@@ -34,9 +34,9 @@ cp .env.example .env            # put your CRUSOE_API_KEY in it
 uv sync
 
 uv run done models              # FIRST: what Crusoe actually serves → writes models.json
-uv run done replay runs/demo-final/demo_01   # a finished run, instantly, zero LLM calls
+uv run done replay runs/demo-final/demo_01_tree   # a finished run, instantly, zero LLM calls
 uv run done run "@tasks/demo_00_live.txt"    # a live run, ~90 seconds
-uv run pytest -q                # 79 offline tests, ~15s
+uv run pytest -q                # 82 offline tests, ~15s
 ```
 
 Live tree viewer (static, no build step):
@@ -118,15 +118,24 @@ that safe, both added after watching it fail:
 ## The demo goals
 
 ```bash
-uv run done run "@tasks/demo_00_live.txt"       # ~90s, splits, goes green — the live run
-uv run done replay runs/demo-final/demo_01      # the full four-way notes CLI, instant
-uv run done run "@tasks/demo_02_impossible.txt" # ends NEEDS_HUMAN, on purpose
+uv run done run "@tasks/demo_00_live.txt"           # live, ~2 min, 2 artifacts
+uv run done replay runs/demo-final/demo_01_tree     # the four-way notes CLI split, instant
+uv run done replay runs/demo-final/demo_02_refusal  # the refusal, instant
+uv run done run "@tasks/demo_02_impossible.txt"     # the refusal, live (~7 min)
 ```
 
 `demo_02` asks for a script that deletes files in `/data` **and emails a report to the admin**.
-There is no `/data` and there are no SMTP credentials. The honest outcome is not "done": the delete
-half completes behind a `--dry-run` guard, and the email half returns one question a human can
-answer. On one run the verifier also caught something the checks had missed entirely — invalid
+There is no `/data` and there are no SMTP credentials. The honest outcome is not "done". On the
+preserved run the delete script is built and verified (3/3), and the root carries two questions
+no amount of further work could answer:
+
+```
+Human needed  YES — actual admin email address must be provided;
+                    SMTP relay or mail server configuration must be available on the host
+```
+
+A node holding a question like that cannot reach `done` even with every check green — making the
+unknown configurable and calling it finished is exactly the lie this project exists to prevent. On one run the verifier also caught something the checks had missed entirely — invalid
 `find` syntax (`-delete -print` ordering) in a script whose own checks were passing. That is the
 whole point: an agent you can walk away from has to be able to say "no".
 
@@ -139,7 +148,7 @@ Measured, from `runs/`:
 | Cost of a full four-way `demo_01` run | **~$0.03** (~300k tokens) |
 | vs the same tokens priced at the root model | **7–10× cheaper** |
 | Wall clock for a four-way split | **8–11 minutes** |
-| Wall clock for `demo_00_live` | **~90 seconds** |
+| Wall clock for `demo_00_live` | **~2 minutes** |
 | Per leaf, clean pass | ~25–30k tokens |
 | Per leaf, with one retry | ~40–55k tokens |
 
@@ -189,12 +198,15 @@ done/checks.py      done/tools.py      done/sandbox.py    done/trace.py
 done/context.py     done/models.py     done/report.py     done/cli.py
 done/prompts/*.md   (13 prompts, loaded at runtime, never inlined)
 viewer/index.html   (static tree viewer, vanilla JS, no build step)
-tests/              (79 offline tests: recursion invariants, monitor, sandbox jail,
+tests/              (82 offline tests: recursion invariants, monitor, sandbox jail,
                      and a full end-to-end run with only the model calls faked)
 tasks/              (3 demo goals + 5 holdout goals)
 ```
 
 Dependencies: `openai`, `pydantic`, `python-dotenv`, `rich`, `pytest`. That is the whole list.
 
-`DECISIONS.md` is the append-only log of every judgment call, including the eleven bugs that live
+`runs/demo-final/` holds four real preserved runs (tree, full event log, and the artifacts the
+agents produced) so every claim here can be checked with `done replay`, offline.
+
+`DECISIONS.md` is the append-only log of every judgment call, including the twelve bugs that live
 runs found and how each was fixed. Worth reading if you want to know what this cost to get right.

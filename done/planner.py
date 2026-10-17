@@ -38,8 +38,10 @@ async def decide(node: Node, ctx) -> tuple[str, list[dict]]:
     # The prompt has always asked for a "NEEDS HUMAN: " prefix on an assumption only a person
     # can settle — but nothing consumed it, so a goal needing SMTP credentials quietly became
     # "# Configuration - user must set these" and reported success. (DECISIONS 15:40)
-    node.human_questions = [a.split(":", 1)[-1].strip() for a in assumptions
-                            if a.upper().replace("-", " ").startswith("NEEDS HUMAN")]
+    node.human_questions = [q for q in (
+        a.split(":", 1)[-1].strip() for a in assumptions
+        if a.upper().replace("-", " ").startswith("NEEDS HUMAN")
+    ) if _is_real_question(q)]
     if node.human_questions:
         node.log(f"{len(node.human_questions)} assumption(s) need a human")
         ctx.trace.event("human_assumption", node.id, questions=node.human_questions)
@@ -166,6 +168,26 @@ def _clean_subgoals(raw, node: Node, ctx, limit: int | None = None) -> list[dict
 
 
 _ONE_FILE = re.compile(r"[\w./-]+\.(?:py|md|txt|json|toml|cfg|ini|sh|yaml|yml|html|css|js)\b")
+
+
+# Models use the prefix to say there is nothing to ask ("NEEDS HUMAN: none"). Taking that
+# literally would block a done verdict on a non-question, which is worse than the gap it
+# was added to close. (DECISIONS 16:55)
+_NOT_A_QUESTION = {
+    "none", "n/a", "na", "nothing", "no", "nil", "none needed", "not applicable",
+    "no human input needed", "no human needed", "none required", "nothing needed",
+}
+
+
+def _is_real_question(text: str) -> bool:
+    body = text.strip().rstrip(".").lower()
+    if len(body) < 8:
+        return False
+    first = body.split("—")[0].split("-")[0].split(",")[0].strip()
+    if first in _NOT_A_QUESTION or body in _NOT_A_QUESTION:
+        return False
+    return not any(body.startswith(p) for p in
+                   ("none", "no human", "nothing", "n/a", "not applicable", "not required"))
 
 
 def _names_one_file(goal: str) -> bool:

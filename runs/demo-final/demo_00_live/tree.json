@@ -87,9 +87,7 @@
         "No external dependencies beyond Python standard library",
         "NEEDS HUMAN: none \u2014 all behavior is determinable from the stated rules"
       ],
-      "human_questions": [
-        "none \u2014 all behavior is determinable from the stated rules"
-      ],
+      "human_questions": [],
       "dod": [
         {
           "id": "integration_end_to_end_cli",

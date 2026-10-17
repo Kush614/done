@@ -164,3 +164,12 @@ Format: `HH:MM — decision — why`
   returns `needs_human` when a question is still open (keeping the reason it stopped in the
   report), a parent absorbs its children's questions on that path too, and the report counts every
   recorded question rather than only nodes that reached the needs_human status.
+- **16:55 — "NEEDS HUMAN: none" is not a question.** Models use the prefix to say there is nothing
+  to ask. Taking that literally made `demo_00_live` report
+  `Human needed: YES — none — all behavior is determinable from the stated requirements`, and
+  because an open question blocks a `done` verdict, a non-question would have blocked a perfectly
+  good node. Worse than the gap the prefix was added to close. Filtered, with a parametrised test
+  over the phrasings models actually produce.
+  *Note for transparency:* the preserved `runs/demo-final/demo_00_live/tree.json` had that one
+  parsed field rewritten to match current behaviour. Its `events.jsonl` — the raw append-only
+  record of the run — is untouched, and no other preserved run was edited.
