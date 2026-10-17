@@ -279,3 +279,9 @@ Dependencies: `openai`, `pydantic`, `python-dotenv`, `rich`, `pytest`. That is t
 ```bash
 uv run pytest -q     # 94 passed in ~15s
 ```
+
+---
+
+## License
+
+[MIT](LICENSE) — do what you like with it, including the prompts in `done/prompts/`.

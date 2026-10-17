@@ -3,6 +3,7 @@ name = "done"
 version = "0.1.0"
 description = "Recursive Verifier Court: a self-splitting agent that may not claim done until a different model family re-runs its checks."
 readme = "README.md"
+license = {text = "MIT"}
 requires-python = ">=3.11"
 dependencies = [
     "openai>=1.40",
