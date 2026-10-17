@@ -3,6 +3,9 @@ __pycache__/
 *.pyc
 .venv/
 .pytest_cache/
+
+# keep only the runs we deliberately preserve for the demo
 runs/*
-!runs/demo-final/
 !runs/.gitkeep
+!runs/demo-final/
+!runs/demo-final/**

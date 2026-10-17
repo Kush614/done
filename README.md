@@ -4,23 +4,27 @@
 
 > An agent gets a one-line goal and a token budget. It either does the work and writes an
 > **executable definition of done**, or it **splits the goal and calls itself** on each piece with a
-> smaller budget and a cheaper model. No node may report "done" until an **independent verifier from
-> a different model family** has re-run its checks from scratch. Nodes notice when they are looping
-> or drifting, and choose: continue, re-plan, stop honestly, or — rarely — ask a human.
+> smaller budget. No node may report "done" until a verifier **from a model family that contributed
+> nothing to the work** has re-run its checks from scratch. Nodes notice when they are looping or
+> drifting, and choose: continue, re-plan, stop honestly, or — rarely — ask a human.
 
 The failure this attacks: agents fill the holes in a vague goal with silent assumptions, then
 confidently report success. Here the assumptions are printed, the checks are written *before* the
-work starts, and the agent that did the work is never the agent that decides whether it is done.
+work starts, **the checks themselves are falsified before anyone trusts them**, and the agent that
+did the work is never the agent that decides whether it is done.
 
 ```
-                       root · DeepSeek (depth 0)  ──── verified by GLM  (different family)
-                        │ SPLIT, budget 60k − 15% reserve
-      ┌─────────────────┼─────────────────┬──────────────────┐
-  storage           cli commands        tests            README
-  gpt-oss-120b      gpt-oss-120b     Nemotron Nano     Nemotron Nano
-      │                 │                 │                 │
-  verified by       verified by       verified by      verified by
-   Gemma             Gemma             gpt-oss          gpt-oss
+          root · DeepSeek-V4-Pro ─── plans only, 1-2 calls, never touches a file
+            │  declares the file layout as a binding contract
+            │  SPLIT · budget 300k, 15% reserved, rest divided by share
+    ┌───────┴────────┬────────────────┬────────────────┐
+ storage.py       cli.py        tests/test_*.py     README.md
+ [PREREQUISITE]   ↑ sees what storage.py actually became, not a description of it
+ Nemotron-3-Super  Nemotron-3-Super  Nemotron-3-Super  Nemotron-3-Super
+    │                │                │                │
+ verified by      verified by      verified by      verified by
+ gpt-oss-120b     gpt-oss-120b     gpt-oss-120b     gpt-oss-120b
+ (openai ≠ nvidia, and openai contributed nothing to this node)
 ```
 
 ## Run it
@@ -30,118 +34,167 @@ cp .env.example .env            # put your CRUSOE_API_KEY in it
 uv sync
 
 uv run done models              # FIRST: what Crusoe actually serves → writes models.json
-uv run done run "@tasks/demo_01_cli_tool.txt" --budget 60000
-uv run done replay runs/<id>    # re-print a finished run, zero LLM calls
-uv run pytest -q                # 30 offline tests, ~1s
+uv run done replay runs/demo-final/demo_01   # a finished run, instantly, zero LLM calls
+uv run done run "@tasks/demo_00_live.txt"    # a live run, ~90 seconds
+uv run pytest -q                # 79 offline tests, ~15s
 ```
 
-Live tree viewer (optional, static, no build step):
+Live tree viewer (static, no build step):
 
 ```bash
 python3 -m http.server 8777     # from the repo root
-open http://localhost:8777/viewer/      # picks up the newest run automatically
+open http://localhost:8777/viewer/      # finds the newest run automatically
 ```
 
-## How it works
+## What makes a "done" claim trustworthy here
 
-| Piece | File | What it does |
-|---|---|---|
-| recursive core | `done/solver.py` | `solve(node)` → EXECUTE or SPLIT; siblings run in parallel via `asyncio.gather` |
-| planner | `done/planner.py` | decides, and **must declare its assumptions** — they are carried to children and printed in the report |
-| definition of done | `done/dod_writer.py` | 3–7 runnable checks, written **before** the work; ≥1 must be *negative*; rewrites them when a verifier calls them inadequate |
-| worker | `done/worker.py` | monitored tool loop; may only call `report_done(status="done")` once `run_checks` is green |
-| verifier | `done/verifier.py` | **different model family**, never sees the worker's transcript, meta-verifies the checks, then re-runs every one itself |
-| monitor | `done/monitor.py` | loop/oscillation/no-progress heuristics (free), drift judge (Nemotron Nano) only on trigger |
-| sandbox | `done/sandbox.py` | per-run workspace, path-jailed, no network, 30s command timeout |
-| trace + viewer | `done/trace.py`, `viewer/index.html` | append-only `events.jsonl` + atomically rewritten `tree.json`, polled every 500 ms |
+Six mechanisms, each of which exists because a live run broke without it. All are in
+`DECISIONS.md` with the evidence.
+
+**1. The checks are written before the work.** `dod_writer` runs before the worker touches
+anything, so the definition of done cannot be retrofitted to whatever got built.
+
+**2. The checks are falsified against an empty workspace.** Every non-negative check must *fail*
+before any work exists. A check that already passes is a **tautology** and proves nothing. A check
+that fails with a syntax or tooling error is **malformed** and could never pass — on the first live
+run a node was failed for `import notes.cli if hasattr(...) else None`, which is not valid Python.
+Both get rewritten before the worker starts. This step is deterministic and costs nothing unless
+something is actually wrong.
+
+**3. The verifier is independent, and independence is enforced against who *actually* worked.**
+Not just "a different family than the configured model" — every model that produced work on a node
+is recorded in `contributor_models`, and those families are disqualified from judging it. This
+matters: when Crusoe rate-limited the Nemotron tier, work silently fell back to `gpt-oss-120b`,
+and the old code still picked the verifier from the *configured* nvidia model — so openai verified
+openai's own work while the trace claimed cross-family independence. That hole is closed in the
+verifier choice, its fallback chain, and the final guard.
+
+**4. The verifier never sees the worker's story.** It is handed the artifacts, a workspace listing
+and read-only tools — not the transcript, not the worker's claims. It re-runs every check itself.
+
+**5. A model cannot talk its way past a failing check.** A `DONE` verdict with any check failing is
+deterministically forced to `NOT_DONE`, and the override is recorded in the trace.
+
+**6. The checks are judged before they are trusted.** `meta_verifier` asks of each check: *would
+passing this actually prove the goal?* If every check passes but the set is inadequate, the verdict
+is `CHECKS_INADEQUATE` and the checks are rewritten — recursion applied to the criteria, not the
+work. After one round of strengthening, a passing stricter set is accepted **with the verifier's
+remaining doubts carried into the report as findings**, rather than arguing until the budget dies.
 
 ### Why it is actually recursive
 
-1. `solve()` calls itself on sub-goals, with a smaller budget and a cheaper model each level down.
-2. The **verifier applies the same procedure to the checks**: before running a check it asks
-   "does passing this check actually prove the goal?" (`meta_verifier.md`). A `CHECKS_INADEQUATE`
-   verdict sends the definition of done back to be rewritten — recursion on the *criteria*, not just
-   the work.
-3. A failed decomposition re-enters the planner, which decomposes the *remainder* and recurses again.
+1. `solve()` calls itself on sub-goals, with a smaller enforced budget each level down.
+2. The verifier applies the same procedure to the checks (`meta_verifier.md`), and a
+   `CHECKS_INADEQUATE` verdict sends the definition of done back to be rewritten.
+3. A failed decomposition re-enters the planner, which decomposes only the remainder.
 
 ### What stops infinite recursion
 
-Four independent brakes — any one of them alone terminates the tree:
+Five independent brakes — any one alone terminates the tree:
 
-1. **Depth cap** `MAX_DEPTH = 3`. At the cap a node may not split; it must EXECUTE.
-2. **Budget.** A node whose allocation is below `MIN_SPLIT_BUDGET = 8_000` may not split. A parent
-   reserves 15% for its own verification before dividing the rest, so budget strictly decreases down
-   the tree. `chat()` raises `BudgetExhausted` *before* a call it cannot afford.
-3. **Attempt cap** `MAX_ATTEMPTS = 2` per node, and the inadequate-checks rewrite fires **at most
-   once** per node (`test_checks_inadequate_rewrites_once_then_proceeds`).
-4. **The monitor.** Identical action 3×, an A-B-A-B or A-B-C-A-B-C oscillation, or 8 steps with no
-   file written and no movement in the check pass-count ends the attempt. A sub-goal that merely
-   restates its parent is rejected at birth (`planner._is_restatement`).
+1. **Depth cap** `MAX_DEPTH = 3`. At the cap a node must EXECUTE.
+2. **Hierarchically enforced budget.** Every call is charged to the node *and its whole ancestor
+   chain*, and refused when a node's subtree has spent its allocation. Before this was enforced,
+   one branch consumed 211k of a 250k run against its own 63k allocation and its three siblings
+   received literally zero tokens.
+3. **Attempt cap** `MAX_ATTEMPTS = 2`, and the check rewrite fires at most once per node.
+4. **The monitor.** Identical action 3×, an A-B-A-B or A-B-C-A-B-C oscillation, or 5 steps with no
+   file written and no movement in the check pass-count. Genuine progress clears loop suspicion, so
+   re-running checks after a fix is not mistaken for a loop.
+5. **Deterministic anti-decomposition.** A goal naming exactly one file may not split — by regex,
+   not by asking the model, which had already been asked nicely and declined.
 
-Also: `MAX_TOOL_STEPS_PER_LEAF = 25`, and `MAX_CHILDREN = 5`.
+### Coordination between parallel siblings
 
-### What makes "done" trustworthy
+Siblings run concurrently in one shared workspace and cannot talk to each other. Two rules make
+that safe, both added after watching it fail:
 
-- **Independence is enforced, not requested.** `config.verifier_for()` maps every family to a
-  different one; `solver.verify_and_decide` rejects a `DONE` whose verifier shares the worker's
-  family and marks the node `failed`. Two tests cover it, including one that fails if the *config*
-  ever allows a family to verify itself.
-- **The verifier re-runs the checks itself.** It is handed the artifacts and a workspace listing —
-  never the worker's transcript or its claims.
-- **A model cannot talk past a failing check.** If it rules `DONE` while a check fails, the verdict
-  is deterministically forced to `NOT_DONE` and the override is recorded in the trace.
-- **Checks are judged before they are trusted.** More than one check that does not test the goal, or
-  any aspect of the goal with no check at all, forces `CHECKS_INADEQUATE`.
-- **Every check set contains a negative check.** "It printed something" is not done.
-- **`needs_human` is rare and specific.** It fires for a provable impossibility (no credentials, no
-  network, a self-contradiction) or two drift flags, and carries one answerable question.
+- **The root owns the layout.** Its first assumption must spell out every path. One run had
+  `storage.py` written flat by one sibling while another built a `notes/` package and a third's
+  tests could find neither.
+- **A declared prerequisite runs first, alone**, and its siblings are handed a real directory
+  listing of what it *actually* produced — not a description of what it was supposed to produce.
 
-## The two demo goals
+## The demo goals
 
 ```bash
-uv run done run "@tasks/demo_01_cli_tool.txt"    # splits ~4 ways, lights up green from the leaves
-uv run done run "@tasks/demo_02_impossible.txt"  # ends NEEDS_HUMAN, on purpose
+uv run done run "@tasks/demo_00_live.txt"       # ~90s, splits, goes green — the live run
+uv run done replay runs/demo-final/demo_01      # the full four-way notes CLI, instant
+uv run done run "@tasks/demo_02_impossible.txt" # ends NEEDS_HUMAN, on purpose
 ```
 
-`demo_02` asks for a script that deletes files in `/data` and **emails a report to the admin**.
-There is no `/data` and there are no SMTP credentials in the sandbox. The honest outcome is not
-"done" — it is the delete half completed behind a `--dry-run` guard (with a negative check proving
-nothing is deleted without `--force`) and one question for a human: *which SMTP server and which
-admin address?* An agent you can walk away from has to be able to do this.
+`demo_02` asks for a script that deletes files in `/data` **and emails a report to the admin**.
+There is no `/data` and there are no SMTP credentials. The honest outcome is not "done": the delete
+half completes behind a `--dry-run` guard, and the email half returns one question a human can
+answer. On one run the verifier also caught something the checks had missed entirely — invalid
+`find` syntax (`-delete -print` ordering) in a script whose own checks were passing. That is the
+whole point: an agent you can walk away from has to be able to say "no".
+
+## Honest performance
+
+Measured, from `runs/`:
+
+| | |
+|---|---|
+| Cost of a full four-way `demo_01` run | **~$0.03** (~300k tokens) |
+| vs the same tokens priced at the root model | **7–10× cheaper** |
+| Wall clock for a four-way split | **8–11 minutes** |
+| Wall clock for `demo_00_live` | **~90 seconds** |
+| Per leaf, clean pass | ~25–30k tokens |
+| Per leaf, with one retry | ~40–55k tokens |
+
+**The wall clock is the honest weak point.** Crusoe rate-limits per model (`429
+max_requests_limit`), so concurrency is capped at 2 per model, and four siblings on one worker tier
+serialise. A four-artifact goal is therefore a replay demo, not a live one. `demo_00_live` is sized
+to finish inside a judging slot.
+
+Reliability is also honest: `demo_01` reaches a fully green tree sometimes, and otherwise stops
+with an exact account of which checks failed and why. **A stop is a correct outcome** — the system
+is built to refuse, and the failures it reports have consistently been real.
 
 ## Crusoe, and why the price spread is the point
 
-One OpenAI-compatible key, `https://api.inference.crusoecloud.com/v1`, gives us five-plus model
-families across a ~20× price spread. That is what makes "a different family verifies every node"
-affordable rather than theoretical: the expensive model plans at the root, **Nemotron Nano** does the
-leaf work and every drift judgement, and verification is routed to whichever *other* family is
-cheapest-capable. `done models` probes the live catalogue and writes the tier assignment and the
+One OpenAI-compatible key at `https://api.inference.crusoecloud.com/v1` gives six model families
+across a ~20× price spread. That is what makes "a different family verifies every node" affordable
+rather than theoretical. `done models` probes the live catalogue and writes the tiers and the
 cross-family verifier map to `models.json`, so a model appearing or disappearing never needs a code
-edit. If a model errors twice, `llm.py` falls back automatically and logs a `model_fallback` event —
-the demo does not die on an outage.
+edit — which mattered, because the catalogue differs from the docs: there is **no `meta-llama` on
+Crusoe at all** (our configured fallback did not exist), the zai family is spelled `zai-org` and
+ships `GLM-5.3`, and Nemotron carries an `NVIDIA-` prefix.
 
-Every run prints its own cost next to what the same token count would have cost at the root model's
-rate.
+**Tier choice was measured, not assumed.** Nemotron Nano at the leaves burned 23–39k tokens per
+node and landed checks at 1/3, 1/5, 0/2. Nemotron-3-Super did the same shape of work in 14k tokens
+and 3 tool steps, clean. So:
+
+- **`nvidia/NVIDIA-Nemotron-3-Super-120B-A12B` runs every node that does actual work** — every
+  file written in a demo run is written by Nemotron.
+- **`nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B` is the drift judge**, the job it is genuinely good at:
+  scoring 0–10, called only when a cheap heuristic trips.
+- `deepseek-ai/DeepSeek-V4-Pro` plans at the root and writes nothing.
+- Verification routes to whichever family contributed nothing — usually `openai/gpt-oss-120b`.
+
+If a model errors twice it gets a **cooldown, never a blacklist** (the old blacklist took the whole
+worker tier out for a run after one burst of 429s), and every fallback is logged.
 
 ## Built during the hackathon (Oct 17, 2026)
 
-Every file in this repository is new work, written today. No pre-existing project, no agent
-framework (no LangChain, no CrewAI) — the recursion, the budget algebra, the sandbox, the monitor
-heuristics and the verifier protocol are all our own code in this repo.
+Every file here is new work written today. No pre-existing project, no agent framework (no
+LangChain, no CrewAI) — the recursion, budget algebra, sandbox, monitor heuristics, falsification
+step and verifier protocol are all our own code.
 
 ```
 done/config.py      done/llm.py        done/solver.py     done/planner.py
 done/dod_writer.py  done/worker.py     done/verifier.py   done/monitor.py
 done/checks.py      done/tools.py      done/sandbox.py    done/trace.py
 done/context.py     done/models.py     done/report.py     done/cli.py
-done/prompts/*.md   (12 prompts, loaded at runtime, never inlined)
-viewer/index.html   (static tree viewer, vanilla JS)
-tests/              (30 offline tests: recursion invariants, monitor, sandbox jail)
-tasks/              (2 demo goals + 5 holdout goals)
+done/prompts/*.md   (13 prompts, loaded at runtime, never inlined)
+viewer/index.html   (static tree viewer, vanilla JS, no build step)
+tests/              (79 offline tests: recursion invariants, monitor, sandbox jail,
+                     and a full end-to-end run with only the model calls faked)
+tasks/              (3 demo goals + 5 holdout goals)
 ```
 
 Dependencies: `openai`, `pydantic`, `python-dotenv`, `rich`, `pytest`. That is the whole list.
 
-- **Nemotron** runs every leaf and every drift judgement (`config.DEFAULT_TIERS[2]`,
-  `drift_judge_model`), which is the cheap half of the price-spread argument above.
-- `DECISIONS.md` is the append-only log of every judgment call made during the build.
+`DECISIONS.md` is the append-only log of every judgment call, including the eleven bugs that live
+runs found and how each was fixed. Worth reading if you want to know what this cost to get right.

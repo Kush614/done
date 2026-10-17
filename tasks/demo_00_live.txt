@@ -1,0 +1,1 @@
+Write slugify.py with a slugify(text) function that lowercases, strips punctuation and joins words with hyphens, plus tests/test_slugify.py covering unicode, punctuation and empty input.
