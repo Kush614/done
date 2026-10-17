@@ -87,8 +87,11 @@ class Config:
     MIN_VERIFY_RESERVE: int = 6_000
 
     # llm
-    MAX_CONCURRENT_LLM: int = 4
-    MAX_CONCURRENT_PER_MODEL: int = 2   # Crusoe rate-limits per model
+    # Measured: 4 concurrent requests per model all succeed in <1s. The 429s are a
+    # sustained RATE limit, not a concurrency limit, so throttling concurrency only
+    # made runs slower without avoiding them. (DECISIONS 15:35)
+    MAX_CONCURRENT_LLM: int = 6
+    MAX_CONCURRENT_PER_MODEL: int = 4
     MODEL_COOLDOWN_S: float = 20.0      # a cooldown, never a blacklist
     RETRIES: int = 3
     SHELL_TIMEOUT: int = 30

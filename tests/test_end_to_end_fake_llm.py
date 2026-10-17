@@ -374,3 +374,34 @@ async def test_the_prerequisite_runs_first_and_siblings_see_its_real_artifacts(
     first_sibling = min(i for i, e in enumerate(tool_calls) if e["node_id"] == "root.2")
     assert last_prereq < first_sibling
     assert root.status == "done"
+
+
+async def test_a_question_only_a_human_can_answer_blocks_done(ctx, node_factory, monkeypatch):
+    """demo_02's lesson: the agent made the SMTP server a config variable, passed its own
+    checks, and reported success. Passing checks cannot settle what we could not know."""
+    f = FakeModels(split=False)
+    real_plan = f._plan
+
+    def plan(node_id):
+        out = real_plan(node_id)
+        out["assumptions"] = out.get("assumptions", []) + [
+            "NEEDS HUMAN: which SMTP server and which admin address should the report go to?"
+        ]
+        return out
+
+    f._plan = plan
+    monkeypatch.setattr(llm, "chat", f.chat)
+    for mod_name in ("planner", "dod_writer", "worker", "verifier", "solver", "checks", "monitor"):
+        mod = __import__(f"done.{mod_name}", fromlist=["llm"])
+        if hasattr(mod, "llm"):
+            monkeypatch.setattr(mod.llm, "chat", f.chat)
+
+    # depth 1 so the planner actually runs (the depth cap would skip it)
+    node = node_factory(depth=1, model="openai/gpt-oss-120b", budget_tokens=40_000)
+    out = await solver.solve(node, ctx)
+
+    assert out.status == "needs_human", "it must not call this done"
+    assert out.verification.verdict == "DONE", "the checks really did pass — that is the point"
+    assert all(c.passed for c in out.dod)
+    assert "SMTP" in (out.final_report or "")
+    assert out.human_questions and "SMTP" in out.human_questions[0]

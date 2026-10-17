@@ -111,6 +111,9 @@ async def _split(node: Node, subgoals: list[dict], ctx) -> Node:
 
     if any(c.status == "needs_human" for c in settled):
         blockers = [c for c in settled if c.status == "needs_human"]
+        for c in blockers:
+            node.human_questions += [q for q in c.human_questions
+                                     if q not in node.human_questions]
         node.status = "needs_human"
         node.final_report = (
             f"{len(settled) - len(blockers)}/{len(settled)} sub-goals verified done, but this "
@@ -237,6 +240,23 @@ async def verify_and_decide(node: Node, ctx) -> Node:
         if family(v.verifier_model) == family(node.model):
             node.log("REJECTED a same-family verification")
             node.status = "failed"
+            ctx.trace.node_update(node)
+            return node
+        # invariant 1b: passing checks cannot settle a question only a human can answer.
+        # Making the unknown configurable and calling it done is the exact lie this exists to
+        # prevent: the checks pass because they test the code we wrote, not the thing we
+        # could not know.
+        if node.human_questions:
+            node.status = "needs_human"
+            built = await summarize(node, ctx)
+            node.final_report = (
+                f"NOT done, needs a human. What exists and verifies: {built}\n"
+                f"But this cannot be called done until you answer: "
+                + " | ".join(node.human_questions)
+            )
+            node.log("checks pass, but an unanswerable question remains → needs_human")
+            ctx.trace.event("needs_human", node.id, questions=node.human_questions,
+                            checks=f"{v.checks_passed}/{v.checks_total}")
             ctx.trace.node_update(node)
             return node
         node.status = "done"

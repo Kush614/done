@@ -35,6 +35,14 @@ async def decide(node: Node, ctx) -> tuple[str, list[dict]]:
 
     assumptions = [str(a).strip() for a in (data.get("assumptions") or []) if str(a).strip()]
     node.assumptions = assumptions[:8]
+    # The prompt has always asked for a "NEEDS HUMAN: " prefix on an assumption only a person
+    # can settle — but nothing consumed it, so a goal needing SMTP credentials quietly became
+    # "# Configuration - user must set these" and reported success. (DECISIONS 15:40)
+    node.human_questions = [a.split(":", 1)[-1].strip() for a in assumptions
+                            if a.upper().replace("-", " ").startswith("NEEDS HUMAN")]
+    if node.human_questions:
+        node.log(f"{len(node.human_questions)} assumption(s) need a human")
+        ctx.trace.event("human_assumption", node.id, questions=node.human_questions)
     reasoning = str(data.get("reasoning", ""))[:600]
 
     subgoals = _clean_subgoals(data.get("subgoals"), node, ctx)

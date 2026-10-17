@@ -57,6 +57,7 @@ class Node(BaseModel):
     is_prerequisite: bool = False   # runs before its siblings; they see its real artifacts
     children: list[str] = Field(default_factory=list)
     assumptions: list[str] = Field(default_factory=list)
+    human_questions: list[str] = Field(default_factory=list)
     dod: list[Check] = Field(default_factory=list)
     verification: Verification | None = None
     verification_history: list[Verification] = Field(default_factory=list)

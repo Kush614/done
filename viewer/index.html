@@ -95,14 +95,24 @@ let litEdges = new Set();
 const $ = id => document.getElementById(id);
 const esc = s => String(s ?? "").replace(/[&<>]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;"}[c]));
 
-// Find the newest run directory by reading python -m http.server's own directory listing.
+// Find the newest run by reading python -m http.server's own directory listing.
+// Run ids are HHMMSS-nnn so they sort chronologically. `demo-final` holds PRESERVED runs in
+// subdirectories (runs/demo-final/<name>/tree.json) and has no tree.json of its own — it sorts
+// last alphabetically, so without this filter auto-discovery picked it and showed nothing.
 async function findRun(){
   if (RUN) return RUN;
   try{
     const html = await (await fetch("../runs/", {cache:"no-store"})).text();
     const dirs = [...html.matchAll(/href="([^"?/]+)\/"/g)].map(m => m[1])
-      .filter(d => d !== "..");
+      .filter(d => d !== ".." && d !== "demo-final");
     if (dirs.length) RUN = dirs.sort().at(-1);
+    else {
+      // nothing live: fall back to the newest preserved run
+      const saved = await (await fetch("../runs/demo-final/", {cache:"no-store"})).text();
+      const names = [...saved.matchAll(/href="([^"?/]+)\/"/g)].map(m => m[1])
+        .filter(d => d !== "..");
+      if (names.length) RUN = "demo-final/" + names.sort().at(-1);
+    }
   }catch(e){}
   return RUN;
 }
