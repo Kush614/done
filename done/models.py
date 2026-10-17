@@ -64,6 +64,8 @@ class Node(BaseModel):
     tool_steps: int = 0
     tokens_used: int = 0
     cost_usd: float = 0.0
+    subtree_tokens: int = 0        # this node plus everything below it
+    subtree_cost_usd: float = 0.0
     flags: list[MonitorFlag] = Field(default_factory=list)
     events: list[str] = Field(default_factory=list)
     final_report: str | None = None

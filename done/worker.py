@@ -65,7 +65,6 @@ async def execute(node: Node, ctx, *, attempt: int = 1,
             node.log("worker stopped: node budget exhausted")
             break
 
-        node.tokens_used += res.usage.get("total", 0)
         if not res.tool_calls:
             content = (res.content or "").strip()
             messages.append({"role": "assistant", "content": content or "(no content)"})

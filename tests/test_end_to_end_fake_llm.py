@@ -76,8 +76,9 @@ class FakeModels:
 
         self.calls.append(tag)
         node_id = getattr(ctx, "_current_node_id", "root")
-        if ctx is not None and getattr(ctx, "budget", None):
-            ctx.budget.spend(model, 400, 120, ctx.cfg)
+        if ctx is not None:
+            # go through the real charging path so attribution is actually under test
+            llm.charge(ctx, model, {"prompt": 400, "completion": 120, "total": 520})
 
         if tag == "planner":
             return _result(json.dumps(self._plan(node_id)), model=model)
@@ -332,3 +333,18 @@ async def test_a_malformed_check_is_rewritten_not_blamed_on_the_code(ctx, node_f
     falsify = [e for e in events if e["type"] == "falsify"][0]
     assert falsify["payload"]["malformed"] == ["bad"]
     assert "bad" not in [c.id for c in out.dod], "the broken check was replaced"
+
+
+async def test_parallel_siblings_do_not_cross_charge_tokens(ctx, node_factory, fake):
+    """Attribution must be per task. With a shared attribute, whichever sibling ran last
+    was charged for the other's calls — root.1 once showed 13.7k against an actual 46k."""
+    fake(split=True)
+    root = await solver.solve(node_factory(model="deepseek-ai/DeepSeek-V4-Pro"), ctx)
+
+    kids = [ctx.nodes[c] for c in root.children]
+    assert all(k.tokens_used > 0 for k in kids), "every sibling was charged for its own work"
+    # the root planned once and wrote integration checks; it did not do its children's work
+    assert root.tokens_used < sum(k.tokens_used for k in kids)
+    assert root.subtree_tokens == root.tokens_used + sum(k.tokens_used for k in kids)
+    # and the run total is the sum of the parts, charged exactly once
+    assert ctx.budget.used == sum(n.tokens_used for n in ctx.nodes.values())

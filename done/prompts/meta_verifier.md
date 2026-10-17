@@ -15,6 +15,11 @@ Say false when the check:
 - is a test file whose existence is checked but whose assertions are never run
 
 Then answer separately: is any CRITICAL aspect of the goal covered by no check at all?
+Be strict about the word CRITICAL. List an aspect ONLY if a reasonable reviewer would refuse to
+sign off without it. Polish, extra documentation, nice-to-have output formatting and additional
+examples are NOT critical — leave `uncovered_aspects` empty in those cases. A single pedantic
+entry here forces the whole check set to be rewritten, so spend it only on something that matters.
+Checks that run a test suite DO count as evidence for the behaviour that suite asserts.
 
 Return ONLY:
 {"checks": [{"id": "c1", "meta_verified": true, "reason": "one line"}],

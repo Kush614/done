@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from contextvars import ContextVar
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -10,6 +11,12 @@ from .llm import Budget
 from .models import Node
 from .sandbox import Sandbox
 from .trace import Trace
+
+# Siblings run concurrently under asyncio.gather. A single attribute would have them
+# overwriting each other's "current node", so every LLM call charged whichever sibling
+# happened to run last. A ContextVar is copied per task, so each branch of the tree keeps
+# its own value. (DECISIONS 15:00)
+_CURRENT_NODE: ContextVar[str | None] = ContextVar("done_current_node", default=None)
 
 
 @dataclass
@@ -21,12 +28,15 @@ class RunContext:
     run_dir: Path
     run_id: str
     nodes: dict[str, Node] = field(default_factory=dict)
-    _current_node_id: str | None = None
     counters: dict[str, int] = field(default_factory=dict)
+
+    @property
+    def _current_node_id(self) -> str | None:
+        return _CURRENT_NODE.get()
 
     def enter(self, node: Node) -> None:
         """Mark a node current so trace events and token charges attribute to it."""
-        self._current_node_id = node.id
+        _CURRENT_NODE.set(node.id)
         self.nodes[node.id] = node
 
     def bump(self, key: str, n: int = 1) -> int:

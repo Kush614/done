@@ -20,7 +20,8 @@ async def write(node: Node, ctx) -> list[Check]:
     return checks
 
 
-async def rewrite(node: Node, verifier_reasoning: str, ctx) -> list[Check]:
+async def rewrite(node: Node, verifier_reasoning: str, ctx,
+                  keep: list[Check] | None = None) -> list[Check]:
     prompt = render(
         "dod_rewrite",
         **node_vars(node),
@@ -28,7 +29,8 @@ async def rewrite(node: Node, verifier_reasoning: str, ctx) -> list[Check]:
         verifier_reasoning=verifier_reasoning,
         workspace=ctx.sandbox.snapshot(),
     )
-    checks = await _ask(node, prompt, ctx, tag="dod_rewrite")
+    checks = await _ask(node, prompt, ctx, tag="dod_rewrite",
+                        keep=keep if keep is not None else list(node.dod))
     node.log(f"checks rejected as inadequate → rewrote {len(checks)} stricter checks")
     ctx.trace.event("dod", node.id, checks=[c.model_dump() for c in checks], phase="rewrite",
                     complaint=verifier_reasoning[:400])
@@ -104,7 +106,10 @@ async def falsify(node: Node, ctx) -> list[Check]:
                  f"check(s) — rewriting before any work starts")
         ctx.bump("checks_falsified")
         try:
-            node.dod = await rewrite(node, "\n\n".join(complaint_parts), ctx)
+            bad = {c.id for c in tautologies} | {c.id for c in malformed}
+            survivors = [c for c in node.dod if c.id not in bad]
+            node.dod = await rewrite(node, "\n\n".join(complaint_parts), ctx,
+                                     keep=survivors or None)
         except Exception as exc:  # noqa: BLE001 - keep the original checks rather than none
             ctx.trace.event("falsify_rewrite_failed", node.id, error=str(exc)[:200])
         else:
@@ -124,17 +129,28 @@ def _looks_malformed(output: str) -> bool:
     return any(sign in low for sign in MALFORMED_SIGNS)
 
 
-async def _ask(node: Node, prompt: str, ctx, *, tag: str) -> list[Check]:
+async def _ask(node: Node, prompt: str, ctx, *, tag: str,
+               keep: list[Check] | None = None) -> list[Check]:
     res = await llm.chat(
         node.model,
         [{"role": "user", "content": prompt}],
-        json_mode=True, max_tokens=1800, tag=tag, ctx=ctx,
+        # A check set is verbose. At 1800 the first live split run truncated three of them
+        # mid-JSON, and the generic fallback below then replaced genuinely good checks with
+        # checks that prove nothing. (DECISIONS 14:35)
+        json_mode=True, max_tokens=3200, tag=tag, ctx=ctx,
     )
     checks = _parse(res.json())
     if not checks:
+        truncated = res.usage.get("completion", 0) >= 3100
+        if keep:
+            node.log(f"check writer returned nothing usable"
+                     f"{' (truncated)' if truncated else ''} — keeping the existing checks")
+            ctx.trace.event("dod_keep_previous", node.id, tag=tag, truncated=truncated,
+                            kept=[c.id for c in keep])
+            return keep
         checks = _fallback_checks(node)
         node.log("check writer returned nothing usable — fell back to a minimal check set")
-        ctx.trace.event("dod_fallback", node.id, tag=tag)
+        ctx.trace.event("dod_fallback", node.id, tag=tag, truncated=truncated)
     return checks
 
 
@@ -190,7 +206,8 @@ def _fallback_checks(node: Node) -> list[Check]:
                       "sys.exit(0 if fs else 1)\""),
         Check(id="f3", description="no placeholder TODO/FIXME left in the deliverable",
               kind="shell", negative=True,
-              command="grep -rIl -E 'TODO|FIXME|NotImplementedError' --include='*.py' . "),
+              command="test -z \"$(grep -rIl -E 'TODO|FIXME|NotImplementedError' "
+                      "--include='*.py' . 2>/dev/null)\""),
     ]
 
 

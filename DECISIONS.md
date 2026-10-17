@@ -65,3 +65,29 @@ Format: `HH:MM — decision — why`
   `run_checks` call that reached 7/7, because it was the third identical call. An improvement in the
   pass count now resets the fingerprint history: re-running checks after a fix is the behaviour we
   ask for. A stuck check loop (same call, same result, 3x) is still caught.
+- **14:25 — `_fallback_checks` must never replace *good* checks.** The first live split run
+  truncated three check-writer responses at `max_tokens=1800`, and the generic fallback set
+  (`f1/f2/f3`) silently took their place — the meta-verifier then correctly rejected those as not
+  testing the goal, and the node died arguing with itself. Now: `max_tokens=3200`, the prompt asks
+  for 3-5 terse checks, and on an unparseable rewrite the EXISTING checks are kept. The generic set
+  is only for a node that never had any.
+- **14:45 — Inadequate checks only matter when they would otherwise produce a DONE.** A failing
+  check already settles the verdict (NOT_DONE, fix the code). Forcing `CHECKS_INADEQUATE` while
+  checks were failing sent the worker round again over a complaint about the *checks* — the single
+  largest budget sink measured (one node spent 26k re-doing work nobody had faulted). The gate now
+  scrutinises the check set only when every check passes.
+- **14:45 — A check rewrite re-verifies; it does not redo the work.** Same reason: the artifacts
+  were never the complaint. And after one round of strengthening, a passing stricter set is
+  accepted with the verifier's remaining doubts carried into the report as findings, rather than
+  looping until the budget dies.
+- **14:45 — The meta-verifier is told to be strict about the word CRITICAL.** It was forcing full
+  rewrites over "usage examples for list/search/delete" and "instructions on how to run the tests".
+  One pedantic entry cost a whole rewrite-and-reverify cycle.
+- **15:00 — Token attribution moved to a ContextVar.** `ctx._current_node_id` was a single
+  attribute, and siblings run concurrently under `asyncio.gather`, so every call was charged to
+  whichever sibling happened to run last (root.1 reported 13.7k against an actual 46k). A
+  ContextVar is copied per task. This was not cosmetic: the worker's per-node ceiling and the
+  monitor's BUDGET flag are computed from these numbers. `llm.charge()` is now the single charging
+  path, shared by the real client and the test double so attribution is genuinely under test.
+- **15:00 — Subtree totals are recomputed on every tree write.** A rollup taken when the children
+  finished went stale as soon as the parent paid for its own integration checks and verification.

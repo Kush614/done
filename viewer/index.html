@@ -191,7 +191,7 @@ function buildCard(node, nodes){
     <div><span class="id">${esc(node.id)}</span>
       <span class="st" style="color:var(--${node.status})">${esc(node.status)}</span></div>
     <div class="g">${esc(node.goal)}</div>
-    <div class="model">${esc((node.model||"").split("/").pop())}${node.decision?` · ${node.decision}`:""}${node.tokens_used?` · ${node.tokens_used.toLocaleString()}tok`:""}</div>
+    <div class="model">${esc((node.model||"").split("/").pop())}${node.decision?` · ${node.decision}`:""}${(node.children||[]).length && node.subtree_tokens?` · ${node.subtree_tokens.toLocaleString()}tok↓`:node.tokens_used?` · ${node.tokens_used.toLocaleString()}tok`:""}</div>
     <div class="row">${chips.join("")}</div>
     ${(node.events||[]).length?`<div class="ev">↳ ${esc(node.events.at(-1))}</div>`:""}`;
   el.onclick = () => { selected = node.id; render(JSON.parse(lastRaw), RUN); };

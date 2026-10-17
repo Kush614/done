@@ -50,18 +50,30 @@ async def verify(node: Node, ctx) -> Verification:
 
     # --- 4. deterministic guardrails the model cannot talk its way past -----
     bad_meta = [c for c in node.dod if not c.meta_verified]
-    if len(bad_meta) > 1 or meta.get("uncovered_aspects"):
+    all_pass = total > 0 and passed == total
+
+    if not all_pass:
+        # A failing check already settles it: the verdict is NOT_DONE and the fix is to the
+        # CODE. Forcing CHECKS_INADEQUATE here used to send the worker round again over a
+        # complaint about the checks, which is both wrong and the single biggest budget sink
+        # we measured. (DECISIONS 14:45)
+        if verdict == "DONE":
+            failing = [r["id"] for r in results["results"] if not r["passed"]]
+            reasoning = (f"[forced] verifier claimed DONE but {len(failing)} check(s) fail "
+                         f"({', '.join(failing)}). Original reasoning: {reasoning}")
+        verdict = "NOT_DONE"
+    elif len(bad_meta) > 1 or meta.get("uncovered_aspects"):
+        # Everything passes, so the only question left is whether the checks were worth
+        # passing. This is the one situation where inadequate checks actually matter.
         if verdict != "CHECKS_INADEQUATE":
-            reasoning = (f"[forced] {len(bad_meta)} check(s) do not test the goal"
+            reasoning = (f"[forced] every check passes, but {len(bad_meta)} of {total} do not "
+                         f"test the goal"
                          + (f"; uncovered: {'; '.join(meta['uncovered_aspects'][:3])}"
                             if meta.get("uncovered_aspects") else "")
                          + f". Verifier said: {reasoning}")
             verdict = "CHECKS_INADEQUATE"
-    elif passed < total and verdict == "DONE":
-        failing = [r["id"] for r in results["results"] if not r["passed"]]
-        reasoning = (f"[forced] verifier claimed DONE but {len(failing)} check(s) fail "
-                     f"({', '.join(failing)}). Original reasoning: {reasoning}")
-        verdict = "NOT_DONE"
+        v_uncovered = meta.get("uncovered_aspects") or []
+        findings = (findings + [f"not covered by any check: {a}" for a in v_uncovered])[:6]
 
     # Independence is judged on the model that ACTUALLY answered, not the one we asked for:
     # a mid-call fallback could otherwise hand the worker's own family the final say.

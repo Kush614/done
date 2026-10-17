@@ -61,9 +61,8 @@ async def _split(node: Node, subgoals: list[dict], ctx) -> Node:
         else:
             settled.append(result)
 
-    # children spent their own tokens; the parent's reserve is whatever its allocation has left
-    node.tokens_used += sum(c.tokens_used for c in settled)
-    node.cost_usd += sum(c.cost_usd for c in settled)
+    # Children's spend is charged to the children themselves (llm.charge). Subtree totals are
+    # recomputed on every tree write, so nothing here needs to roll anything up.
 
     if any(c.status == "needs_human" for c in settled):
         blockers = [c for c in settled if c.status == "needs_human"]
@@ -184,14 +183,36 @@ async def verify_and_decide(node: Node, ctx) -> Node:
         ctx.trace.node_update(node)
         return node
 
-    if v.verdict == "CHECKS_INADEQUATE" and node.dod_rewrites < 1:
-        node.dod_rewrites += 1
-        ctx.bump("checks_rewritten")
-        try:
-            node.dod = await dod_writer.rewrite(node, v.reasoning, ctx)
-        except llm.BudgetExhausted as exc:
-            return _stop(node, ctx, f"out of budget while rewriting checks: {exc}")
-        ctx.trace.node_update(node)
+    if v.verdict == "CHECKS_INADEQUATE":
+        if node.dod_rewrites < 1:
+            # The complaint is about the CHECKS, not the work. Rewrite them and re-verify
+            # against the artifacts that already exist — re-running the worker here would be
+            # answering a question nobody asked, and it is what exhausted the first budgets.
+            node.dod_rewrites += 1
+            ctx.bump("checks_rewritten")
+            try:
+                node.dod = await dod_writer.rewrite(node, v.reasoning, ctx)
+            except llm.BudgetExhausted as exc:
+                return _stop(node, ctx, f"out of budget while rewriting checks: {exc}")
+            node.log("re-verifying against the stricter checks without redoing the work")
+            ctx.trace.node_update(node)
+            return await verify_and_decide(node, ctx)
+
+        # Already strengthened once. If the stricter set passes, that is as much assurance as
+        # this node can buy — accept it, and carry the verifier's remaining doubts into the
+        # report rather than burning the budget to argue.
+        if v.checks_total and v.checks_passed == v.checks_total:
+            v.verdict = "DONE"
+            v.reasoning = ("checks were strengthened once and the stricter set passes; the "
+                           "verifier still considers coverage imperfect — see findings. "
+                           + v.reasoning)
+            node.status = "done"
+            node.log("accepted after one round of strengthened checks (caveats recorded)")
+            ctx.trace.event("accepted_with_caveats", node.id,
+                            findings=v.independent_findings, verifier=v.verifier_model)
+            node.final_report = await summarize(node, ctx)
+            ctx.trace.node_update(node)
+            return node
 
     node.attempts += 1
     return await replan_or_stop(node, [], ctx)
@@ -270,7 +291,6 @@ async def replan_or_stop(node: Node, children: list[Node], ctx) -> Node:
         ctx.trace.node_update(node)
         retried = await asyncio.gather(*(solve(c, ctx) for c in extra), return_exceptions=True)
         settled = [r for r in retried if isinstance(r, Node)]
-        node.tokens_used += sum(c.tokens_used for c in settled)
         if settled and all(c.status == "done" for c in settled):
             survivors = [c for c in children if c.status == "done"] + settled
             try:

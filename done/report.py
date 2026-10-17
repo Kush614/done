@@ -47,7 +47,9 @@ def node_line(node: Node) -> Text:
     if node.flags:
         kinds = ",".join(sorted({f.kind for f in node.flags}))
         t.append(f"  ⚑{kinds}", style="bold red")
-    if node.tokens_used:
+    if node.children and node.subtree_tokens:
+        t.append(f"  {node.subtree_tokens:,}tok↓", style="grey50")   # subtree total
+    elif node.tokens_used:
         t.append(f"  {node.tokens_used:,}tok", style="grey50")
     t.append(f"\n    {node.goal[:96]}", style="grey74")
     if node.events:

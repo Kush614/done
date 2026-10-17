@@ -68,6 +68,26 @@ class Budget:
         return (self.used * 0.7 / 1_000_000) * p_in + (self.used * 0.3 / 1_000_000) * p_out
 
 
+def charge(ctx: Any, model: str, usage: dict) -> float:
+    """Bill one call to the run AND to the node that made it.
+
+    Per-node accuracy is what makes the worker's ceiling and the monitor's BUDGET flag mean
+    anything; the node is resolved from a ContextVar so concurrent siblings cannot
+    cross-charge each other. Shared by the real client and the test double.
+    """
+    budget: Budget | None = getattr(ctx, "budget", None)
+    if budget is None:
+        return 0.0
+    cfg: Config = getattr(ctx, "cfg", None) or load_config()
+    prompt, completion = usage.get("prompt", 0), usage.get("completion", 0)
+    cost = budget.spend(model, prompt, completion, cfg)
+    node = (getattr(ctx, "nodes", None) or {}).get(getattr(ctx, "_current_node_id", None))
+    if node is not None:
+        node.tokens_used += usage.get("total") or (prompt + completion)
+        node.cost_usd += cost
+    return cost
+
+
 @dataclass
 class LLMResult:
     content: str | None
@@ -190,9 +210,7 @@ async def chat(
                 "total": getattr(resp.usage, "total_tokens", 0) or 0,
             }
             choice = resp.choices[0].message
-            cost = 0.0
-            if budget is not None:
-                cost = budget.spend(use_model, usage["prompt"], usage["completion"], cfg)
+            cost = charge(ctx, use_model, usage)
             if trace:
                 trace.llm_call(tag=tag, model=use_model, usage=usage, latency_ms=latency_ms,
                                node_id=node_id, cost_usd=round(cost, 6))

@@ -9,7 +9,8 @@ WORKSPACE RIGHT NOW:
 {{workspace}}
 
 RULES
-1. 3 to 7 checks. Every check must run from the workspace root with NO network access.
+1. 3 to 5 checks — fewer and sharper beats more and vague. Keep each command on ONE
+   short line. Every check runs from the workspace root with NO network access.
 2. Prefer `shell` and `pytest`. A `shell` check passes if and only if its command exits 0.
 3. At least one check must be NEGATIVE: it asserts something must NOT happen, must fail, or must
    be absent. Mark it `"negative": true` — but the exit-code rule never changes: **write every
