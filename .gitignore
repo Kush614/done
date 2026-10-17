@@ -1,0 +1,8 @@
+.env
+__pycache__/
+*.pyc
+.venv/
+.pytest_cache/
+runs/*
+!runs/demo-final/
+!runs/.gitkeep

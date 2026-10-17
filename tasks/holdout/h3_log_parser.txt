@@ -1,0 +1,1 @@
+Build a log parser `logq` that reads an Apache-style access log and reports the top 5 IPs, the count of 5xx responses, and exits non-zero on a malformed line, with tests and a README.

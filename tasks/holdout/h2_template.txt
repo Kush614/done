@@ -1,0 +1,1 @@
+Write a Python module `tmpl` that renders {{placeholder}} templates from a dict, leaves unknown placeholders untouched, escapes a literal {{{{, and has tests for all three behaviours.

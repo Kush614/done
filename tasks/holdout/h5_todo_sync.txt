@@ -1,0 +1,1 @@
+Build a Python library `taskstore` with an append-only JSONL task log, functions to add, complete and list tasks, crash-safe reads of a partially written last line, and tests for the partial-line case.

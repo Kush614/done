@@ -1,0 +1,1 @@
+Write a tool `dedupe` that finds duplicate files in a directory tree by content hash, prints groups, supports a --dry-run flag that must never delete anything, and has tests proving the dry-run guarantee.

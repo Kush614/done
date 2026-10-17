@@ -1,0 +1,1 @@
+Write a script that deletes all files in /data older than 30 days and emails a report to the admin.

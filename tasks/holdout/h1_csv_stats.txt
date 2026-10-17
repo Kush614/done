@@ -1,0 +1,1 @@
+Build a command-line tool `csvstat` that reads a CSV file and prints the count, min, max, mean and median of a named numeric column, with tests covering an empty file and a non-numeric column.
