@@ -11,8 +11,12 @@ async def decide(node: Node, ctx) -> tuple[str, list[dict]]:
     """Ask the node's own model whether to do the work or split it."""
     node.status = "planning"
     ctx.trace.node_update(node)
+    # The root owns the decomposition and the layout contract, so it gets the full prompt with
+    # the worked example. A child is almost always answering "EXECUTE, my parent already
+    # decomposed this" — at 3.2k tokens a call that was 13k of pure overhead on a four-way
+    # split. (DECISIONS 15:35)
     prompt = render(
-        "planner",
+        "planner" if node.depth == 0 else "planner_leaf",
         **node_vars(node),
         max_depth=ctx.cfg.MAX_DEPTH,
         max_children=ctx.cfg.MAX_CHILDREN,

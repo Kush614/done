@@ -16,7 +16,14 @@ from .dod_writer import render_checks
 from .models import Node, Verification
 from .prompts import node_vars, render
 
-MAX_INDEPENDENT_TOOL_CALLS = 3
+MAX_INDEPENDENT_TOOL_CALLS = 2
+
+
+def _signature(node: Node) -> str:
+    """Identity of a check set: if this is unchanged, meta-verification is unchanged."""
+    import hashlib
+    blob = "|".join(f"{c.id}{c.kind}{c.command or ''}{c.path or ''}" for c in node.dod)
+    return hashlib.sha1(blob.encode()).hexdigest()[:12]
 
 
 class VerifierFamilyError(RuntimeError):
@@ -27,17 +34,31 @@ async def verify(node: Node, ctx) -> Verification:
     node.status = "verifying"
     ctx.trace.node_update(node)
 
-    vmodel = ctx.cfg.verifier_for(node.model)
-    if family(vmodel) == family(node.model):
+    # Everyone who contributed work to this node is disqualified from judging it — including
+    # a model that only got the job because a rate limit bumped the configured one.
+    contributors = {family(m) for m in node.contributor_models} | {family(node.model)}
+    vmodel = ctx.cfg.verifier_for(node.model, forbid=contributors)
+    if family(vmodel) in contributors:
         raise VerifierFamilyError(
-            f"verifier {vmodel!r} is the same family as worker {node.model!r}"
+            f"verifier {vmodel!r} shares a family with a contributor to {node.id} "
+            f"({sorted(contributors)})"
         )
     ctx.trace.event("verify_start", node.id, verifier_model=vmodel, worker_model=node.model,
                     worker_family=family(node.model), verifier_family=family(vmodel),
-                    checks=len(node.dod))
+                    contributor_families=sorted(contributors),
+                    contributor_models=list(node.contributor_models), checks=len(node.dod))
 
     # --- 1. meta-verification: are these checks even testing the goal? -------
-    meta = await _meta_verify(node, vmodel, ctx)
+    # Unchanged checks do not need re-judging: the second verification of a node whose code
+    # was retried was paying 2k to be told the same thing about the same check set.
+    signature = _signature(node)
+    if node.meta_signature == signature and all(c.meta_reason for c in node.dod):
+        meta = dict(node.meta_cache or {})
+        ctx.trace.event("meta_verify_reused", node.id, signature=signature)
+    else:
+        meta = await _meta_verify(node, vmodel, ctx, contributors)
+        node.meta_signature = signature
+        node.meta_cache = meta
 
     # --- 2. re-run every check, ourselves -----------------------------------
     results = await run_checks(node.dod, ctx, runner="verifier")
@@ -45,7 +66,7 @@ async def verify(node: Node, ctx) -> Verification:
 
     # --- 3. look for what the checks miss -----------------------------------
     verdict, reasoning, findings, actual_model = await _adjudicate(
-        node, vmodel, ctx, meta, results
+        node, vmodel, ctx, meta, results, contributors
     )
 
     # --- 4. deterministic guardrails the model cannot talk its way past -----
@@ -77,12 +98,13 @@ async def verify(node: Node, ctx) -> Verification:
 
     # Independence is judged on the model that ACTUALLY answered, not the one we asked for:
     # a mid-call fallback could otherwise hand the worker's own family the final say.
-    if family(actual_model) == family(node.model):
-        reasoning = (f"[forced] verification fell back to {actual_model}, the worker's own "
-                     f"family ({family(node.model)}); independence lost. Original: {reasoning}")
+    if family(actual_model) in contributors:
+        reasoning = (f"[forced] verification was answered by {actual_model}, whose family "
+                     f"contributed work to this node ({sorted(contributors)}); independence "
+                     f"lost. Original: {reasoning}")
         verdict = "NOT_DONE"
         ctx.trace.event("independence_lost", node.id, asked_for=vmodel, answered_by=actual_model,
-                        worker_model=node.model)
+                        worker_model=node.model, contributors=sorted(contributors))
 
     v = Verification(
         verifier_model=actual_model,
@@ -102,13 +124,14 @@ async def verify(node: Node, ctx) -> Verification:
     return v
 
 
-async def _meta_verify(node: Node, vmodel: str, ctx) -> dict:
+async def _meta_verify(node: Node, vmodel: str, ctx,
+                       contributors: set[str] | None = None) -> dict:
     prompt = render("meta_verifier", **node_vars(node), checks=render_checks(node.dod))
     try:
         res = await llm.chat(
             vmodel, [{"role": "user", "content": prompt}],
             json_mode=True, max_tokens=1200, tag="meta_verifier", ctx=ctx,
-            fallback=ctx.cfg.cross_family_fallbacks(node.model),
+            fallback=ctx.cfg.cross_family_fallbacks(node.model, forbid=contributors or set()),
         )
         data = res.json()
     except Exception as exc:  # noqa: BLE001
@@ -139,7 +162,8 @@ async def _meta_verify(node: Node, vmodel: str, ctx) -> dict:
     return {"uncovered_aspects": uncovered, "hint": data.get("verdict_hint")}
 
 
-async def _adjudicate(node: Node, vmodel: str, ctx, meta: dict, results: dict):
+async def _adjudicate(node: Node, vmodel: str, ctx, meta: dict, results: dict,
+                      contributors: set[str] | None = None):
     meta_lines = "\n".join(
         f"- {c.id} [{c.kind}] {c.description}\n    meta_verified={c.meta_verified} "
         f"({c.meta_reason or 'no reason given'})"
@@ -180,7 +204,8 @@ async def _adjudicate(node: Node, vmodel: str, ctx, meta: dict, results: dict):
                 json_mode=not offering_tools,
                 max_tokens=1400 if offering_tools else 2000,
                 tag="verifier", ctx=ctx,
-                fallback=ctx.cfg.cross_family_fallbacks(node.model),
+                fallback=ctx.cfg.cross_family_fallbacks(node.model,
+                                                        forbid=contributors or set()),
             )
         except llm.BudgetExhausted:
             # out of budget mid-verification: fall back to the deterministic check results

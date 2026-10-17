@@ -222,7 +222,8 @@ def main(argv: list[str] | None = None) -> int:
 
     p_run = sub.add_parser("run", help="solve a goal")
     p_run.add_argument("goal", help="the one-line goal, or @path/to/file.txt")
-    p_run.add_argument("--budget", type=int, default=60_000, help="token budget for the whole run")
+    p_run.add_argument("--budget", type=int, default=250_000,
+                   help="token budget for the whole run (~$0.03 at these tiers)")
     p_run.add_argument("--max-depth", type=int, default=None)
     p_run.add_argument("--out", type=Path, default=REPO_ROOT / "runs")
     p_run.add_argument("--quiet", action="store_true", help="no live tree (for scripted runs)")

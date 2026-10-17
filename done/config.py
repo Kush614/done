@@ -87,7 +87,9 @@ class Config:
     MIN_VERIFY_RESERVE: int = 6_000
 
     # llm
-    MAX_CONCURRENT_LLM: int = 6
+    MAX_CONCURRENT_LLM: int = 4
+    MAX_CONCURRENT_PER_MODEL: int = 2   # Crusoe rate-limits per model
+    MODEL_COOLDOWN_S: float = 20.0      # a cooldown, never a blacklist
     RETRIES: int = 3
     SHELL_TIMEOUT: int = 30
     OUTPUT_TRUNCATE: int = 4096
@@ -114,24 +116,31 @@ class Config:
         deepest = max(self.tiers)
         return self.tiers[deepest if depth > deepest else min(self.tiers)]
 
-    def verifier_for(self, worker_model: str) -> str:
-        """Pick a verifier from a different family. Never returns the worker's own family."""
-        fam = family(worker_model)
-        chosen = self.verifier_for_family.get(fam)
-        if chosen and family(chosen) != fam:
-            return chosen
-        # last resort: any configured verifier of another family
-        for candidate in list(self.verifier_for_family.values()) + [self.fallback_model]:
-            if family(candidate) != fam:
-                return candidate
-        raise ValueError(f"no cross-family verifier available for {worker_model!r}")
+    def verifier_for(self, worker_model: str, forbid: set[str] | None = None) -> str:
+        """Pick a verifier from a family that contributed nothing to the work.
 
-    def cross_family_fallbacks(self, worker_model: str) -> list[str]:
-        """Models of a different family than the worker, for llm.py to fall back onto."""
-        fam = family(worker_model)
+        `forbid` carries the families of every model that actually produced work on the node,
+        which can differ from `worker_model` when a rate limit forced a fallback.
+        """
+        banned = {family(worker_model)} | (forbid or set())
+        chosen = self.verifier_for_family.get(family(worker_model))
+        if chosen and family(chosen) not in banned:
+            return chosen
+        for candidate in list(self.verifier_for_family.values()) + list(self.tiers.values()) + [
+            self.fallback_model
+        ]:
+            if family(candidate) not in banned:
+                return candidate
+        raise ValueError(
+            f"no verifier available outside families {sorted(banned)} for {worker_model!r}"
+        )
+
+    def cross_family_fallbacks(self, worker_model: str, forbid: set[str] | None = None) -> list[str]:
+        """Models of a different family than everyone who worked on the node."""
+        banned = {family(worker_model)} | (forbid or set())
         pool = list(dict.fromkeys(list(self.verifier_for_family.values())
                                   + list(self.tiers.values()) + [self.fallback_model]))
-        return [m for m in pool if family(m) != fam]
+        return [m for m in pool if family(m) not in banned]
 
     def price_for(self, model_id: str) -> tuple[float, float]:
         return self.prices.get(model_id, UNKNOWN_PRICE)

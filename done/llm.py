@@ -100,6 +100,18 @@ def charge(ctx: Any, model: str, usage: dict) -> float:
     return cost
 
 
+def _record_contributor(ctx: Any, model: str) -> None:
+    """Remember every model that actually produced work for this node.
+
+    A fallback can change which model does the work mid-run. If we keep choosing the verifier
+    from the node's *configured* model, a fallback to the verifier's own family means a family
+    verifies its own work while the trace still claims independence.
+    """
+    node = (getattr(ctx, "nodes", None) or {}).get(getattr(ctx, "_current_node_id", None))
+    if node is not None and model not in node.contributor_models:
+        node.contributor_models.append(model)
+
+
 def node_allocation_left(ctx: Any, tag: str) -> int | None:
     """How much of its own allocation the current node's subtree still has.
 
@@ -129,7 +141,13 @@ class LLMResult:
 
 _client: AsyncOpenAI | None = None
 _semaphore: asyncio.Semaphore | None = None
+_model_semaphores: dict[str, asyncio.Semaphore] = {}
 _consecutive_errors: dict[str, int] = {}
+_cooldown_until: dict[str, float] = {}
+
+# Tags where the model is doing WORK on the artifacts, as opposed to judging them. Whoever
+# answers one of these has contributed to the node, so its family can never verify the node.
+WORK_TAGS = {"worker", "dod_writer", "dod_rewrite", "integration_checks", "planner", "replan"}
 
 
 def client() -> AsyncOpenAI:
@@ -146,10 +164,12 @@ def client() -> AsyncOpenAI:
 
 def reset_client() -> None:
     """Tests and `done models` call this after mutating env."""
-    global _client, _semaphore, _consecutive_errors
+    global _client, _semaphore, _consecutive_errors, _cooldown_until, _model_semaphores
     _client = None
     _semaphore = None
+    _model_semaphores = {}
     _consecutive_errors = {}
+    _cooldown_until = {}
 
 
 def semaphore(cfg: Config) -> asyncio.Semaphore:
@@ -157,6 +177,14 @@ def semaphore(cfg: Config) -> asyncio.Semaphore:
     if _semaphore is None:
         _semaphore = asyncio.Semaphore(cfg.MAX_CONCURRENT_LLM)
     return _semaphore
+
+
+def model_semaphore(model: str, cfg: Config) -> asyncio.Semaphore:
+    """Per-model concurrency. Crusoe returns 429 max_requests_limit per model, so a global
+    limit alone let four parallel siblings rate-limit their own worker tier into oblivion."""
+    if model not in _model_semaphores:
+        _model_semaphores[model] = asyncio.Semaphore(cfg.MAX_CONCURRENT_PER_MODEL)
+    return _model_semaphores[model]
 
 
 async def list_models() -> list[dict]:
@@ -203,10 +231,14 @@ async def chat(
 
     last_err: Exception | None = None
     for use_model in attempt_models:
-        if _consecutive_errors.get(use_model, 0) >= 2 and use_model != attempt_models[-1]:
+        # A cooldown, not a blacklist: the old code skipped a model forever after two errors,
+        # so a single burst of 429s took the whole worker tier out for the rest of the run and
+        # silently handed its work to the fallback. (DECISIONS 15:45)
+        if time.time() < _cooldown_until.get(use_model, 0.0) and use_model != attempt_models[-1]:
             if trace:
-                trace.event("model_fallback", node_id, from_model=use_model,
-                            to_model=attempt_models[-1], reason="2 consecutive errors")
+                trace.event("model_cooldown", node_id, model=use_model,
+                            seconds_left=round(_cooldown_until[use_model] - time.time(), 1),
+                            to_model=attempt_models[-1])
             continue
         for attempt in range(cfg.RETRIES):
             kwargs: dict[str, Any] = {
@@ -222,20 +254,27 @@ async def chat(
                 kwargs["response_format"] = {"type": "json_object"}
             started = time.time()
             try:
-                async with semaphore(cfg):
+                async with semaphore(cfg), model_semaphore(use_model, cfg):
                     resp = await client().chat.completions.create(**kwargs)
             except Exception as exc:  # noqa: BLE001 - any API failure is retryable here
                 last_err = exc
+                text = str(exc)
+                rate_limited = "429" in text or "rate_limit" in text or "Too many requests" in text
                 _consecutive_errors[use_model] = _consecutive_errors.get(use_model, 0) + 1
+                if _consecutive_errors[use_model] >= 2:
+                    _cooldown_until[use_model] = time.time() + cfg.MODEL_COOLDOWN_S
                 if trace:
                     trace.event("llm_error", node_id, model=use_model, tag=tag,
-                                attempt=attempt + 1, error=str(exc)[:300])
-                if json_mode and "response_format" in str(exc):
+                                attempt=attempt + 1, rate_limited=rate_limited,
+                                error=text[:300])
+                if json_mode and "response_format" in text:
                     json_mode = False  # model doesn't support it; prompt already demands JSON
-                await asyncio.sleep(min(8.0, 1.5 ** attempt))
+                # a 429 wants real time, not a token gesture
+                await asyncio.sleep(min(24.0, (4.0 if rate_limited else 1.5) * (2 ** attempt)))
                 continue
 
             _consecutive_errors[use_model] = 0
+            _cooldown_until.pop(use_model, None)
             latency_ms = int((time.time() - started) * 1000)
             usage = {
                 "prompt": getattr(resp.usage, "prompt_tokens", 0) or 0,
@@ -244,6 +283,8 @@ async def chat(
             }
             choice = resp.choices[0].message
             cost = charge(ctx, use_model, usage)
+            if tag in WORK_TAGS:
+                _record_contributor(ctx, use_model)
             if trace:
                 trace.llm_call(tag=tag, model=use_model, usage=usage, latency_ms=latency_ms,
                                node_id=node_id, cost_usd=round(cost, 6))

@@ -57,10 +57,25 @@ def test_a_sparse_catalogue_still_yields_a_usable_config():
 def test_a_single_family_catalogue_is_reported_not_silently_accepted():
     """If only one family is live, cross-family verification is impossible — say so loudly."""
     cfg = Config()
+    # a genuinely single-family catalogue: tiers, verifier map and fallback all one family
     cfg.verifier_for_family = {"openai": "openai/gpt-oss-20b"}
+    cfg.tiers = {0: "openai/gpt-oss-120b", 1: "openai/gpt-oss-120b", 2: "openai/gpt-oss-20b"}
     cfg.fallback_model = "openai/gpt-oss-120b"
     with pytest.raises(ValueError):
         cfg.verifier_for("openai/gpt-oss-120b")
+
+
+def test_a_contributor_family_can_never_be_chosen_as_the_verifier():
+    """A rate limit can hand a node's work to the fallback model mid-run. The family that
+    actually did the work must not then be the family that signs it off."""
+    cfg = Config()
+    # pretend nvidia was rate-limited and openai/gpt-oss did the work instead
+    verifier = cfg.verifier_for("nvidia/NVIDIA-Nemotron-3-Super-120B-A12B",
+                                forbid={"openai"})
+    assert family(verifier) not in ("nvidia", "openai")
+    chain = cfg.cross_family_fallbacks("nvidia/NVIDIA-Nemotron-3-Super-120B-A12B",
+                                       forbid={"openai"})
+    assert chain and all(family(m) not in ("nvidia", "openai") for m in chain)
 
 
 ALL_PROMPTS = sorted(p.stem for p in PROMPT_DIR.glob("*.md"))

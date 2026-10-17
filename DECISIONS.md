@@ -113,3 +113,23 @@ Format: `HH:MM — decision — why`
   Nano at the leaves: 23-39k tokens per node, checks landing 1/3, 1/5, 0/2, one node of seven done.
   Nemotron-3-Super on the same shape of work: DONE, 3/3 checks, 3 tool steps, 14k tokens. Nano is
   kept for what it is genuinely good at — scoring drift 0-10 — where it has worked every time.
+- **15:35 — A child gets a short planner prompt (`planner_leaf.md`).** The full planner prompt
+  carries the worked example and the layout contract, which only a decomposing node needs; at 3.2k
+  per call it was ~13k of pure overhead on a four-way split, to be told "EXECUTE, my parent already
+  decomposed this".
+- **15:35 — Meta-verification is cached per check set.** Re-verifying a node after a code retry was
+  paying 2k to be told the same thing about the same unchanged checks.
+- **15:45 — A model that errors gets a COOLDOWN, never a blacklist.** The old rule skipped a model
+  permanently after two consecutive errors, and it could never succeed again because it was never
+  tried again. One burst of Crusoe 429s (`max_requests_limit`) therefore removed the entire worker
+  tier for the rest of a run and silently handed all of its work to the fallback: 52 fallback
+  events, 102 of 108 calls answered by one model.
+- **15:45 — Per-model concurrency, because Crusoe rate-limits per model.** A global semaphore of 6
+  let four parallel siblings 429 their own worker tier. Now: 4 concurrent overall, 2 per model, and
+  a 429 backs off in seconds rather than milliseconds.
+- **15:45 — Independence is judged against every model that CONTRIBUTED, not the configured one.**
+  This was a genuine integrity hole: when a rate limit bumped the nvidia worker to the openai
+  fallback, the verifier was still chosen from the *configured* nvidia model — so openai verified
+  openai's own work while the trace claimed cross-family independence. Nodes now record every model
+  that produced work (`contributor_models`), and those families are disqualified from judging, in
+  the verifier choice, in its fallback chain, and in the final guard.

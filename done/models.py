@@ -62,6 +62,9 @@ class Node(BaseModel):
     verification_history: list[Verification] = Field(default_factory=list)
     attempts: int = 0
     dod_rewrites: int = 0
+    meta_signature: str | None = None       # which check set the meta verdicts belong to
+    meta_cache: dict | None = None
+    contributor_models: list[str] = Field(default_factory=list)  # who actually did the work
     tool_steps: int = 0
     tokens_used: int = 0
     cost_usd: float = 0.0
