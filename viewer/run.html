@@ -3,82 +3,110 @@
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>done — run trace</title>
 <style>
+  /* Gumroad-style: cream ground, 1px black everything, hard offset shadows, flat vivid fills */
   :root{
-    --bg:#0c0e12; --panel:#13161c; --line:#262b35; --ink:#e6e9ef; --dim:#8b93a3;
-    --pending:#5b6372; --planning:#4b8bf4; --executing:#a865f7; --verifying:#e0a92b;
-    --replanning:#30b6c4; --done:#2fbf71; --failed:#e5484d; --stopped:#e5484d;
-    --needs_human:#f07c28;
+    --bg:#F4F4F0; --ink:#000; --dim:#5f5f58; --panel:#fff; --line:#000;
+    --pink:#FF90E8; --yellow:#FFC900; --teal:#23A094; --mint:#90DFD3;
+    --lilac:#DBD5FC; --sky:#B3C1FF; --red:#DC341E; --grey:#E8E8E2;
+    --pending:#E8E8E2; --planning:#B3C1FF; --executing:#DBD5FC; --verifying:#FFC900;
+    --replanning:#90DFD3; --done:#23A094; --failed:#DC341E; --stopped:#DC341E;
+    --needs_human:#FF90E8;
+    --shadow:4px 4px 0 var(--ink);
   }
   *{box-sizing:border-box}
   body{margin:0;background:var(--bg);color:var(--ink);
-    font:13px/1.5 ui-monospace,SFMono-Regular,Menlo,monospace}
-  header{position:sticky;top:0;z-index:20;background:linear-gradient(#0c0e12f2,#0c0e12d9);
-    backdrop-filter:blur(6px);border-bottom:1px solid var(--line);padding:12px 18px}
-  .goal{font-size:14px;font-weight:600;letter-spacing:.01em}
-  .back{color:var(--dim);text-decoration:none;font-size:11px;letter-spacing:.06em;
-    text-transform:uppercase;display:inline-block;margin-bottom:6px}
-  .back:hover{color:var(--ink)}
-  .meta{color:var(--dim);margin-top:4px;display:flex;gap:16px;flex-wrap:wrap;align-items:center}
-  .pill{padding:2px 9px;border-radius:999px;font-size:11px;font-weight:700;letter-spacing:.06em;
-    text-transform:uppercase;border:1px solid}
-  main{display:flex;min-height:calc(100vh - 62px)}
-  #gutter{width:188px;flex:none;border-right:1px solid var(--line);padding:22px 12px;
-    color:var(--dim);font-size:11px}
-  #gutter .depth{height:138px;display:flex;flex-direction:column;justify-content:flex-start;gap:3px}
-  #gutter .depth b{color:var(--ink);font-size:11px;letter-spacing:.04em}
-  #stage{flex:1;overflow:auto;padding:22px 18px 60px}
-  #panel{width:400px;flex:none;border-left:1px solid var(--line);background:var(--panel);
-    padding:18px;overflow:auto;max-height:calc(100vh - 62px);position:sticky;top:62px}
-  #panel h2{font-size:13px;margin:0 0 2px}
-  #panel .sub{color:var(--dim);margin-bottom:14px}
-  #panel section{border-top:1px solid var(--line);padding:12px 0}
-  #panel h3{font-size:10px;letter-spacing:.12em;text-transform:uppercase;color:var(--dim);
-    margin:0 0 7px}
+    font:14px/1.5 -apple-system,BlinkMacSystemFont,"Helvetica Neue",Arial,sans-serif;
+    -webkit-font-smoothing:antialiased}
+  .mono,code,pre{font-family:ui-monospace,SFMono-Regular,Menlo,monospace}
+  header{position:sticky;top:0;z-index:20;background:var(--pink);
+    border-bottom:1px solid var(--ink);padding:14px 22px}
+  .back{color:var(--ink);text-decoration:none;font-size:12px;font-weight:800;
+    letter-spacing:.05em;display:inline-block;margin-bottom:7px;background:#fff;
+    border:1px solid var(--ink);border-radius:999px;padding:3px 12px;
+    box-shadow:2px 2px 0 var(--ink)}
+  .back:hover{transform:translate(-1px,-1px);box-shadow:3px 3px 0 var(--ink)}
+  .goal{font-size:19px;font-weight:800;letter-spacing:-.02em;line-height:1.25}
+  .meta{margin-top:9px;display:flex;gap:8px;flex-wrap:wrap;align-items:center;
+    align-content:flex-start;font-size:12px}
+  .meta>span:not(.pill){background:#fff;border:1px solid var(--ink);border-radius:999px;
+    padding:3px 11px;font-weight:600}
+  .pill{padding:3px 12px;border-radius:999px;font-size:12px;font-weight:800;
+    letter-spacing:.06em;border:1px solid var(--ink)!important;color:var(--ink)!important}
+  main{display:flex;min-height:calc(100vh - 92px)}
+  #gutter{width:186px;flex:none;border-right:1px solid var(--ink);padding:24px 14px;
+    font-size:12px;background:var(--lilac)}
+  #gutter .depth{height:150px;display:flex;flex-direction:column;gap:3px}
+  #gutter .depth b{font-size:12px;font-weight:800;letter-spacing:.02em}
+  #gutter .depth span{font-family:ui-monospace,Menlo,monospace;font-size:11px}
+  #stage{flex:1;overflow:auto;padding:30px 22px 70px}
+  #panel{width:410px;flex:none;border-left:1px solid var(--ink);background:var(--panel);
+    padding:20px;overflow:auto;max-height:calc(100vh - 92px);position:sticky;top:92px}
+  #panel h2{font-size:16px;margin:0 0 3px;font-weight:800}
+  #panel .sub{font-size:12px;margin-bottom:15px;font-family:ui-monospace,Menlo,monospace}
+  #panel section{border-top:1px solid var(--ink);padding:13px 0}
+  #panel h3{font-size:11px;letter-spacing:.1em;text-transform:uppercase;margin:0 0 9px;
+    font-weight:800}
   /* ---- tree ---- */
   .sub{display:flex;gap:26px;justify-content:center;align-items:flex-start}
   .wrap{display:flex;flex-direction:column;align-items:center;position:relative}
-  .kids{display:flex;gap:22px;align-items:flex-start;position:relative;padding-top:26px}
-  .kids::before{content:"";position:absolute;top:0;left:50%;width:2px;height:26px;
-    background:var(--line);transform:translateX(-1px)}
-  .wrap.has-parent::before{content:"";position:absolute;top:-26px;left:50%;width:2px;height:26px;
-    background:var(--line);transform:translateX(-1px)}
-  .wrap.edge-lit::before,.wrap.edge-lit .kids::before{background:var(--done);
-    box-shadow:0 0 7px #2fbf7199;animation:rise .9s ease-out}
-  @keyframes rise{from{background:var(--line);box-shadow:none}to{background:var(--done)}}
-  .card{width:252px;background:var(--panel);border:1px solid var(--line);border-left:3px solid var(--pending);
-    border-radius:7px;padding:9px 11px;cursor:pointer;transition:border-color .15s,transform .1s}
-  .card:hover{transform:translateY(-1px)}
-  .card.sel{border-color:#4b8bf4;box-shadow:0 0 0 1px #4b8bf4}
-  .card .id{font-weight:700;letter-spacing:.03em}
-  .card .st{float:right;font-size:10px;letter-spacing:.08em;text-transform:uppercase;font-weight:700}
-  .card .g{color:var(--dim);margin:5px 0;max-height:34px;overflow:hidden}
-  .card .model{color:#6f7787;font-size:11px}
-  .card .row{display:flex;gap:7px;align-items:center;margin-top:6px;flex-wrap:wrap;font-size:11px}
-  .chip{border:1px solid var(--line);border-radius:4px;padding:1px 6px;color:var(--dim)}
-  .chip.bad{border-color:var(--failed);color:#ff9ea1}
-  .chip.good{border-color:var(--done);color:#8be0ab}
-  .chip.warn{border-color:var(--needs_human);color:#ffbd8a}
-  .chip.verif{border-color:#30b6c4;color:#8adbe4}
-  .ev{color:#6f7787;font-size:11px;margin-top:5px;white-space:nowrap;overflow:hidden;
-    text-overflow:ellipsis}
-  .check{display:flex;gap:7px;margin-bottom:8px;align-items:flex-start}
-  .check .mk{flex:none;width:13px;font-weight:700}
-  .check code{display:block;color:var(--dim);font-size:11px;word-break:break-all;margin-top:2px}
-  .mv{color:var(--done)} .nmv{color:var(--needs_human)}
-  .finding{border-left:2px solid var(--needs_human);padding-left:8px;margin-bottom:7px;color:#ffd0ab}
-  .flag{border-left:2px solid var(--failed);padding-left:8px;margin-bottom:7px;color:#ff9ea1;
-    font-size:11px;word-break:break-word}
-  .asm{color:var(--dim);margin-bottom:4px}
-  pre{white-space:pre-wrap;word-break:break-word;margin:0;font-size:11px;color:var(--dim)}
-  .empty{color:var(--dim);padding:40px;text-align:center}
-  a{color:#6fa8ff}
+  .kids{display:flex;gap:24px;align-items:flex-start;position:relative;padding-top:30px}
+  .kids::before{content:"";position:absolute;top:0;left:50%;width:2px;height:30px;
+    background:var(--ink);transform:translateX(-1px)}
+  .wrap.has-parent::before{content:"";position:absolute;top:-30px;left:50%;width:2px;height:30px;
+    background:var(--ink);transform:translateX(-1px)}
+  .wrap.edge-lit::before,.wrap.edge-lit .kids::before{background:var(--teal);width:4px;
+    transform:translateX(-2px);animation:rise .9s ease-out}
+  @keyframes rise{from{background:var(--ink)}to{background:var(--teal)}}
+  .card{width:264px;background:var(--panel);border:1px solid var(--ink);border-radius:4px;
+    padding:0;overflow:hidden;cursor:pointer;box-shadow:var(--shadow);
+    transition:transform .1s,box-shadow .1s}
+  .card:hover{transform:translate(-2px,-2px);box-shadow:6px 6px 0 var(--ink)}
+  .card.sel{box-shadow:6px 6px 0 var(--pink)}
+  .card .hdr{display:flex;align-items:center;gap:8px;padding:9px 12px;
+    border-bottom:1px solid var(--ink)}
+  .card .id{font-weight:800;font-family:ui-monospace,Menlo,monospace;font-size:13px}
+  .card .st{margin-left:auto;font-size:10px;letter-spacing:.07em;font-weight:800;
+    border:1px solid var(--ink);border-radius:999px;padding:1px 8px;
+    color:var(--ink)!important;white-space:nowrap}
+  .card .g{margin:11px 12px 9px;padding:0;font-weight:600;font-size:13px;line-height:1.3;
+    height:2.6em;overflow:hidden;display:-webkit-box;-webkit-line-clamp:2;
+    -webkit-box-orient:vertical}
+  .card .model{padding:0 12px 9px;font-size:11px;font-family:ui-monospace,Menlo,monospace}
+  .card .row{display:flex;gap:6px;align-items:center;align-content:flex-start;
+    padding:0 12px 11px;flex-wrap:wrap;font-size:11px}
+  .chip{border:1px solid var(--ink);border-radius:999px;padding:1px 8px;background:#fff;
+    font-weight:600}
+  .chip.bad{background:var(--red);color:#fff}
+  .chip.good{background:var(--teal);color:#fff}
+  .chip.warn{background:var(--yellow)}
+  .chip.verif{background:var(--sky)}
+  .ev{font-size:11px;padding:0 12px 11px;white-space:nowrap;overflow:hidden;
+    text-overflow:ellipsis;font-family:ui-monospace,Menlo,monospace}
+  .check{display:flex;gap:8px;margin-bottom:11px;align-items:flex-start;font-size:13px}
+  .check .mk{flex:none;width:19px;height:19px;border:1px solid var(--ink);border-radius:4px;
+    display:flex;align-items:center;justify-content:center;font-weight:800;font-size:12px;
+    color:var(--ink)!important}
+  .check code{display:block;font-size:11px;word-break:break-all;margin-top:3px;
+    background:var(--grey);border:1px solid var(--ink);border-radius:3px;padding:2px 6px}
+  .mv{background:var(--mint)!important}
+  .nmv{background:var(--yellow)!important}
+  .finding{background:var(--yellow);border:1px solid var(--ink);border-radius:4px;
+    padding:8px 10px;margin-bottom:8px;font-size:13px;font-weight:500}
+  .flag{background:var(--red);color:#fff;border:1px solid var(--ink);border-radius:4px;
+    padding:8px 10px;margin-bottom:8px;font-size:12px;word-break:break-word}
+  .asm{margin-bottom:6px;font-size:13px}
+  pre{white-space:pre-wrap;word-break:break-word;margin:0;font-size:12px}
+  #panel section pre{background:var(--grey);border:1px solid var(--ink);border-radius:3px;
+    padding:7px 9px;margin-bottom:5px}
+  .empty{padding:50px;text-align:center;font-weight:600}
+  a{color:var(--ink)}
 </style>
 
 <header>
   <a href="./" class="back">← all runs</a>
   <div class="goal" id="goal">waiting for a run…</div>
   <div class="meta">
-    <span id="verdict" class="pill" style="border-color:var(--pending);color:var(--pending)">idle</span>
+    <span id="verdict" class="pill" style="background:var(--pending)">idle</span>
     <span id="spend">—</span><span id="checks">—</span><span id="fams">—</span>
     <span id="clock">—</span><span id="runid" style="margin-left:auto"></span>
   </div>
@@ -145,7 +173,7 @@ function render(data, run){
   const st = root ? root.status : "pending";
   const vp = $("verdict");
   vp.textContent = {done:"DONE",needs_human:"NEEDS HUMAN",stopped:"STOPPED",failed:"FAILED"}[st] || st;
-  vp.style.borderColor = vp.style.color = `var(--${st})`;
+  vp.style.background = `var(--${st})`;
 
   // depth gutter
   const tiers = meta.tiers || {};
@@ -181,7 +209,6 @@ function buildWrap(node, nodes, hasParent){
 function buildCard(node, nodes){
   const el = document.createElement("div");
   el.className = "card" + (node.id === selected ? " sel" : "");
-  el.style.borderLeftColor = `var(--${node.status})`;
   const dod = node.dod || [];
   const passed = dod.filter(c => c.passed).length;
   const v = node.verification;
@@ -193,12 +220,14 @@ function buildCard(node, nodes){
   if (node.dod_rewrites) chips.push(`<span class="chip warn">checks rewritten</span>`);
   if (node.attempts) chips.push(`<span class="chip">attempt ${node.attempts+1}</span>`);
   el.innerHTML = `
-    <div><span class="id">${esc(node.id)}</span>
-      <span class="st" style="color:var(--${node.status})">${esc(node.status)}</span></div>
+    <div class="hdr"><span class="id">${esc(node.id)}</span>
+      <span class="st">${esc(node.status)}</span></div>
     <div class="g">${esc(node.goal)}</div>
     <div class="model">${esc((node.model||"").split("/").pop())}${node.decision?` · ${node.decision}`:""}${(node.children||[]).length && node.subtree_tokens?` · ${node.subtree_tokens.toLocaleString()}tok↓`:node.tokens_used?` · ${node.tokens_used.toLocaleString()}tok`:""}</div>
     <div class="row">${chips.join("")}</div>
     ${(node.events||[]).length?`<div class="ev">↳ ${esc(node.events.at(-1))}</div>`:""}`;
+  // the status pill is a flat fill behind black text; set it after innerHTML exists
+  el.querySelector(".st").style.background = `var(--${node.status})`;
   el.onclick = () => { selected = node.id; render(JSON.parse(lastRaw), RUN); };
   return el;
 }
@@ -208,7 +237,7 @@ function paintPanel(node, nodes){
   const sec = (title, body) => body ? `<section><h3>${title}</h3>${body}</section>` : "";
   const checks = (node.dod||[]).map(c => `
     <div class="check">
-      <span class="mk" style="color:var(--${c.passed===true?'done':c.passed===false?'failed':'pending'})">
+      <span class="mk" style="background:var(--${c.passed===true?'done':c.passed===false?'failed':'pending'})">
         ${c.passed===true?"✓":c.passed===false?"✗":"·"}</span>
       <div>${esc(c.description)}
         <code>${esc(c.kind)}${c.negative?" · NEGATIVE":""}${c.command?": "+esc(c.command):""}${c.path?": "+esc(c.path):""}</code>
@@ -217,12 +246,12 @@ function paintPanel(node, nodes){
       </div>
     </div>`).join("");
   $("panel").innerHTML = `
-    <h2>${esc(node.id)} · <span style="color:var(--${node.status})">${esc(node.status)}</span></h2>
+    <h2>${esc(node.id)} · <span style="background:var(--${node.status});border:1px solid #000;border-radius:999px;padding:2px 10px;font-size:12px">${esc(node.status)}</span></h2>
     <div class="sub">${esc(node.model)} · depth ${node.depth} · budget ${(node.budget_tokens||0).toLocaleString()} tok</div>
     ${sec("goal", `<pre>${esc(node.goal)}</pre>`)}
     ${sec("assumptions it made", (node.assumptions||[]).map(a=>`<div class="asm">• ${esc(a)}</div>`).join(""))}
     ${sec(`definition of done (${(node.dod||[]).filter(c=>c.passed).length}/${(node.dod||[]).length})`, checks)}
-    ${sec("verification", v?`<div>verdict <b style="color:var(--${v.verdict==='DONE'?'done':'failed'})">${esc(v.verdict)}</b>
+    ${sec("verification", v?`<div>verdict <b style="background:var(--${v.verdict==='DONE'?'done':'failed'});border:1px solid #000;border-radius:999px;padding:2px 9px">${esc(v.verdict)}</b>
         by <b>${esc(v.verifier_model)}</b><br><span style="color:var(--dim)">family
         ${esc(v.verifier_model.split("/")[0])} ≠ ${esc((node.model||"").split("/")[0])} — independence enforced</span></div>
       <pre style="margin-top:7px">${esc(v.reasoning)}</pre>`:"")}
