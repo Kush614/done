@@ -1,0 +1,1 @@
+Build a Python CLI called `notes` with commands `add <text>`, `list`, `search <term>`, and `delete <id>`, storing notes in a JSON file, with tests and a README.
