@@ -133,3 +133,25 @@ Format: `HH:MM — decision — why`
   openai's own work while the trace claimed cross-family independence. Nodes now record every model
   that produced work (`contributor_models`), and those families are disqualified from judging, in
   the verifier choice, in its fallback chain, and in the final guard.
+- **15:55 — The root is challenged once when it declines to decompose.** It answered EXECUTE for
+  the four-artifact demo goal about half the time, putting leaf work on the most expensive model in
+  the config and making the run cost MORE than the all-root-model baseline (0.7×, i.e. a loss). A
+  root goal naming a single file is never re-asked.
+- **15:35 — Concurrency is not the limiter; a sustained rate limit is.** Measured directly: 4
+  concurrent requests per model all return in under a second. The 429s
+  (`max_requests_limit (orchestrator)`) come from sustained request *rate*, so capping concurrency
+  at 2 made runs slower without avoiding them. Restored to 6 overall / 4 per model, and reduced
+  total call count instead — that is the lever that actually works.
+- **15:40 — The `NEEDS HUMAN:` convention is now enforced, not merely requested.** The planner
+  prompt has asked since the first version for that prefix on an assumption only a person can
+  settle, and nothing in the code ever read it. The consequence showed up in demo_02: asked to
+  "email a report to the admin" with no credentials available, the agent wrote
+  `# Configuration - user must set these`, passed its own checks, and reported success. That is
+  precisely the failure this project exists to prevent — the checks pass because they test the code
+  we wrote, not the thing we could not know. A node carrying an unresolved human question can no
+  longer reach `done` even with every check green, and the question propagates to its parent.
+- **15:45 — Demo shape, decided from measurement.** A four-artifact split takes 8-16 minutes on
+  this account's rate limits; a judging slot is 3. So: `demo_00_live` (2 artifacts, ~90s) is the
+  live run, the full `demo_01` tree ships preserved in `runs/demo-final/` for `done replay`
+  (instant, zero LLM calls), and `demo_02` is the refusal. Preferring a replay over a staged live
+  run is the honest trade: the replay is a real run, not a mock.
