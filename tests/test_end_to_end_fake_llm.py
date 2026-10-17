@@ -62,7 +62,16 @@ class FakeModels:
         self.dod_rounds: dict[str, int] = {}
 
     async def chat(self, model, messages, *, tools=None, json_mode=False, max_tokens=2000,
-                   temperature=0.2, tag: str, ctx=None) -> LLMResult:
+                   temperature=0.2, tag: str, ctx=None, fallback=None) -> LLMResult:
+        if tag in ("verifier", "meta_verifier"):
+            # the real verifier must only ever be offered cross-family replacements
+            assert fallback, "verification was called with no cross-family fallback chain"
+            from done.config import family as _fam
+            node = (ctx.nodes.get(getattr(ctx, "_current_node_id", "")) if ctx else None)
+            if node is not None:
+                assert all(_fam(m) != _fam(node.model) for m in fallback), \
+                    f"fallback chain {fallback} includes the worker's own family"
+
         self.calls.append(tag)
         node_id = getattr(ctx, "_current_node_id", "root")
         if ctx is not None and getattr(ctx, "budget", None):
@@ -122,7 +131,7 @@ class FakeModels:
             {"id": "c2", "description": "the test suite passes", "kind": "pytest",
              "command": "tests/test_storage.py"},
             {"id": "c3", "description": "negative: no stray secrets file is written",
-             "kind": "shell", "command": "test -f secrets.txt", "negative": True},
+             "kind": "shell", "command": "test ! -f secrets.txt", "negative": True},
         ]}
 
     def _worker(self, node_id: str) -> dict:
@@ -238,3 +247,33 @@ async def test_the_trace_is_complete_enough_to_replay(ctx, node_factory, fake):
     assert set(tree["nodes"]) == {"root", "root.1", "root.2"}
     nodes, _ = __import__("done.report", fromlist=["load_run"]).load_run(ctx.run_dir)
     assert nodes["root"].status == "done"
+
+
+async def test_a_mid_call_fallback_to_the_workers_own_family_voids_the_verdict(
+        ctx, node_factory, monkeypatch):
+    """The last hole in the independence claim: we asked Gemma, but Gemma was down and the
+    client fell back to the worker's own family. That verdict must not stand."""
+    f = FakeModels(split=False)
+    real_chat = f.chat
+
+    async def chat_with_sneaky_fallback(model, messages, **kw):
+        res = await real_chat(model, messages, **kw)
+        if kw.get("tag") == "verifier":
+            res.model_used = "openai/gpt-oss-120b"   # same family as the worker below
+        return res
+
+    monkeypatch.setattr(llm, "chat", chat_with_sneaky_fallback)
+    for mod_name in ("planner", "dod_writer", "worker", "verifier", "solver", "checks", "monitor"):
+        mod = __import__(f"done.{mod_name}", fromlist=["llm"])
+        if hasattr(mod, "llm"):
+            monkeypatch.setattr(mod.llm, "chat", chat_with_sneaky_fallback)
+
+    node = node_factory(depth=ctx.cfg.MAX_DEPTH, model="openai/gpt-oss-120b")
+    out = await solver.solve(node, ctx)
+
+    assert out.status != "done", "a same-family ruling must never produce a done node"
+    assert "independence lost" in out.verification.reasoning
+    assert out.verification.verdict == "NOT_DONE"
+    # and the trace names what actually happened, not what we asked for
+    events = [json.loads(l) for l in (ctx.run_dir / "events.jsonl").read_text().splitlines()]
+    assert any(e["type"] == "independence_lost" for e in events)

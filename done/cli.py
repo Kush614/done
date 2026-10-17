@@ -41,7 +41,8 @@ async def _models(write: bool) -> int:
     chosen = _pick_tiers(ids, cfg)
     console.print("\n[bold]tier assignment[/bold]")
     for depth, mid in sorted(chosen["tiers"].items()):
-        label = {0: "root planner", 1: "mid planner/worker", 2: "leaves"}.get(depth, f"depth {depth}")
+        label = {"0": "root planner", "1": "mid planner/worker",
+                 "2": "leaves"}.get(str(depth), f"depth {depth}")
         console.print(f"  depth {depth} ({label}): [bold]{mid}[/bold]")
     console.print(f"  drift judge: {chosen['drift_judge_model']}")
     console.print(f"  fallback:    {chosen['fallback_model']}")
@@ -84,6 +85,7 @@ def _pick_tiers(ids: list[str], cfg: Config) -> dict:
         by_family.setdefault(family(mid), []).append(mid)
 
     def best_of(fam: str) -> str:
+        """Cheapest model of a family that we would actually trust to follow a JSON schema."""
         pool = by_family[fam]
         for want in MID_PREFS + LEAF_PREFS + ROOT_PREFS:
             for mid in pool:
@@ -91,19 +93,24 @@ def _pick_tiers(ids: list[str], cfg: Config) -> dict:
                     return mid
         return sorted(pool)[0]
 
-    # every family present gets a verifier from a DIFFERENT family, cheapest-capable first
-    order = [f for f in ("openai", "google", "nvidia", "zai", "deepseek", "meta-llama", "meta",
-                         "moonshotai", "mistralai", "qwen") if f in by_family]
-    order += [f for f in sorted(by_family) if f not in order]
-    verifier_for_family: dict[str, str] = {}
-    for fam in order:
-        others = [f for f in order if f != fam]
-        if others:
-            # rotate so we do not funnel every family into one verifier
-            pick_fam = others[order.index(fam) % len(others)]
-            verifier_for_family[fam] = best_of(pick_fam)
-    for fam, default in cfg.verifier_for_family.items():
-        verifier_for_family.setdefault(fam, default)
+    # Start from the hand-picked pairs and keep every one whose target is actually live; only
+    # synthesize a verifier for a family we had no pairing for. Pure rotation was worse: it
+    # handed every leaf to whichever model happened to land in the slot. (DECISIONS.md)
+    verifier_for_family: dict[str, str] = {
+        fam: v for fam, v in cfg.verifier_for_family.items()
+        if v in ids and family(v) != fam and fam in by_family
+    }
+    for fam in sorted(by_family):
+        if fam in verifier_for_family:
+            continue
+        for want_fam in ("openai", "google", "nvidia", "deepseek-ai", "zai-org", "qwen"):
+            if want_fam != fam and want_fam in by_family:
+                verifier_for_family[fam] = best_of(want_fam)
+                break
+        else:
+            others = [f for f in by_family if f != fam]
+            if others:
+                verifier_for_family[fam] = best_of(sorted(others)[0])
 
     fallback = pick(["llama-3.3-70b", "gpt-oss-120b", "gemma"], cfg.fallback_model)
     drift = pick(LEAF_PREFS, cfg.drift_judge_model)

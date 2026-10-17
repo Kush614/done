@@ -44,7 +44,9 @@ async def verify(node: Node, ctx) -> Verification:
     passed, total = results["passed"], results["total"]
 
     # --- 3. look for what the checks miss -----------------------------------
-    verdict, reasoning, findings = await _adjudicate(node, vmodel, ctx, meta, results)
+    verdict, reasoning, findings, actual_model = await _adjudicate(
+        node, vmodel, ctx, meta, results
+    )
 
     # --- 4. deterministic guardrails the model cannot talk its way past -----
     bad_meta = [c for c in node.dod if not c.meta_verified]
@@ -61,8 +63,17 @@ async def verify(node: Node, ctx) -> Verification:
                      f"({', '.join(failing)}). Original reasoning: {reasoning}")
         verdict = "NOT_DONE"
 
+    # Independence is judged on the model that ACTUALLY answered, not the one we asked for:
+    # a mid-call fallback could otherwise hand the worker's own family the final say.
+    if family(actual_model) == family(node.model):
+        reasoning = (f"[forced] verification fell back to {actual_model}, the worker's own "
+                     f"family ({family(node.model)}); independence lost. Original: {reasoning}")
+        verdict = "NOT_DONE"
+        ctx.trace.event("independence_lost", node.id, asked_for=vmodel, answered_by=actual_model,
+                        worker_model=node.model)
+
     v = Verification(
-        verifier_model=vmodel,
+        verifier_model=actual_model,
         checks_passed=passed,
         checks_total=total,
         independent_findings=findings,
@@ -85,6 +96,7 @@ async def _meta_verify(node: Node, vmodel: str, ctx) -> dict:
         res = await llm.chat(
             vmodel, [{"role": "user", "content": prompt}],
             json_mode=True, max_tokens=1200, tag="meta_verifier", ctx=ctx,
+            fallback=ctx.cfg.cross_family_fallbacks(node.model),
         )
         data = res.json()
     except Exception as exc:  # noqa: BLE001
@@ -150,13 +162,14 @@ async def _adjudicate(node: Node, vmodel: str, ctx, meta: dict, results: dict):
                 vmodel, messages,
                 tools=tools.VERIFIER_TOOL_SCHEMAS if used_calls < MAX_INDEPENDENT_TOOL_CALLS else None,
                 max_tokens=1400, tag="verifier", ctx=ctx,
+                fallback=ctx.cfg.cross_family_fallbacks(node.model),
             )
         except llm.BudgetExhausted:
             # out of budget mid-verification: fall back to the deterministic check results
             ok = results["passed"] == results["total"] and results["total"] > 0
             return ("DONE" if ok else "NOT_DONE",
                     "budget exhausted during verification; ruling on re-run check results alone",
-                    findings)
+                    findings, vmodel)
 
         if res.tool_calls and used_calls < MAX_INDEPENDENT_TOOL_CALLS:
             messages.append({
@@ -189,9 +202,9 @@ async def _adjudicate(node: Node, vmodel: str, ctx, meta: dict, results: dict):
             verdict = "DONE" if results["passed"] == results["total"] and results["total"] else "NOT_DONE"
         findings = [str(f)[:300] for f in (data.get("independent_findings") or []) if str(f).strip()]
         reasoning = str(data.get("reasoning", ""))[:900] or "(verifier gave no reasoning)"
-        return verdict, reasoning, findings[:6]
+        return verdict, reasoning, findings[:6], res.model_used
 
     ok = results["passed"] == results["total"] and results["total"] > 0
     return ("DONE" if ok else "NOT_DONE",
             "verifier never returned a parseable ruling; fell back to re-run check results",
-            findings)
+            findings, vmodel)

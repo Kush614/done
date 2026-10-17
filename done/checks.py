@@ -57,11 +57,12 @@ async def _run_one(check: Check, ctx: Any) -> tuple[bool, str]:
         # No command rewriting: the sandbox PATH puts this interpreter's bin dir first, so
         # `python3`, `python` and `pytest` already resolve to the environment that has pytest.
         res = await sb.run_shell(cmd)
-        ok = res.ok
-        if check.negative:
-            # a negative check passes when the command FAILS (the bad thing didn't work)
-            ok = not res.ok
-        return ok, res.summary()
+        # ONE rule for every command check, negative included: exit 0 means the check passed.
+        # Inverting negative checks here double-negated commands that already encoded their own
+        # inversion (`... && exit 1 || exit 0`), which is exactly what a model writes. The
+        # `negative` flag is now descriptive only — it says what the check asserts, not how to
+        # read the exit code. (DECISIONS.md 14:10)
+        return res.ok, res.summary()
 
     if check.kind == "json_schema":
         path = sb.resolve(check.path or "")

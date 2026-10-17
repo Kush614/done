@@ -85,22 +85,44 @@ async def test_write_file_is_refused_for_the_verifier(ctx, node_factory):
     assert not (ctx.sandbox.root / "x.py").exists()
 
 
-async def test_checks_run_and_negative_checks_invert(ctx, node_factory):
+async def test_exit_zero_means_pass_for_every_command_check(ctx, node_factory):
+    """One rule, negative checks included: exit 0 = passed. The `negative` flag is descriptive.
+
+    The runner used to invert negative checks, which double-negated the commands models
+    actually write (`... && exit 1 || exit 0`) and failed correct code. See DECISIONS 14:10.
+    """
     from done.checks import run_checks
     from done.models import Check
     node = node_factory()
     node.dod = [
         Check(id="p", description="true passes", kind="shell", command="true"),
         Check(id="f", description="false fails", kind="shell", command="false"),
-        Check(id="n", description="negative: the bad thing must not work", kind="shell",
-              command="test -f secrets.txt", negative=True),
+        Check(id="n", description="negative: no secrets file is written", kind="shell",
+              command="test ! -f secrets.txt", negative=True),
+        Check(id="sn", description="negative written as a self-inverting command", kind="shell",
+              command="test -f secrets.txt && exit 1 || exit 0", negative=True),
         Check(id="e", description="file must exist", kind="file_exists", path="README.md"),
     ]
     ctx.sandbox.write_file("README.md", "# hi\n")
     summary = await run_checks(node.dod, ctx)
     by_id = {r["id"]: r["passed"] for r in summary["results"]}
-    assert by_id == {"p": True, "f": False, "n": True, "e": True}
-    assert summary["passed"] == 3 and summary["total"] == 4
+    assert by_id == {"p": True, "f": False, "n": True, "sn": True, "e": True}
+    assert summary["passed"] == 4 and summary["total"] == 5
+
+
+async def test_file_exists_is_the_one_kind_that_still_inverts(ctx, node_factory):
+    """`file_exists` has no command to express an absence in, so the flag does the work."""
+    from done.checks import run_checks
+    from done.models import Check
+    node = node_factory()
+    node.dod = [
+        Check(id="absent", description="no secrets file", kind="file_exists",
+              path="secrets.txt", negative=True),
+        Check(id="present", description="readme exists", kind="file_exists", path="README.md"),
+    ]
+    ctx.sandbox.write_file("README.md", "# hi\n")
+    summary = await run_checks(node.dod, ctx)
+    assert {r["id"]: r["passed"] for r in summary["results"]} == {"absent": True, "present": True}
 
 
 async def test_a_check_that_escapes_the_sandbox_fails_closed(ctx, node_factory):

@@ -1,0 +1,33 @@
+{
+  "probed_at": "2026-10-17T14:00:23",
+  "live_models": [
+    "Qwen/Qwen3.8-27B",
+    "deepseek-ai/DeepSeek-V4-Pro",
+    "deepseek-ai/DeepSeek-V4.1-Flash",
+    "deepseek-ai/Deepseek-V4-Flash",
+    "google/gemma-4-31b-it",
+    "nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B",
+    "nvidia/NVIDIA-Nemotron-3-Super-120B-A12B",
+    "nvidia/NVIDIA-Nemotron-3.5-Super-VL",
+    "nvidia/Nemotron-3-Nano-Omni-Reasoning-30B-A3B",
+    "nvidia/Nemotron-3.5-Lightning-30B-A3B",
+    "openai/gpt-oss-120b",
+    "zai-org/GLM-5.3",
+    "zai-org/GLM-5.3-Flash"
+  ],
+  "tiers": {
+    "0": "deepseek-ai/DeepSeek-V4-Pro",
+    "1": "openai/gpt-oss-120b",
+    "2": "nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B"
+  },
+  "verifier_for_family": {
+    "nvidia": "openai/gpt-oss-120b",
+    "openai": "google/gemma-4-31b-it",
+    "deepseek-ai": "zai-org/GLM-5.3",
+    "zai-org": "deepseek-ai/DeepSeek-V4.1-Flash",
+    "google": "nvidia/NVIDIA-Nemotron-3-Super-120B-A12B",
+    "qwen": "openai/gpt-oss-120b"
+  },
+  "fallback_model": "openai/gpt-oss-120b",
+  "drift_judge_model": "nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B"
+}

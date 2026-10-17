@@ -18,38 +18,43 @@ BASE_URL = os.environ.get("CRUSOE_BASE_URL", "https://api.inference.crusoecloud.
 
 # --- model tiers ------------------------------------------------------------
 # depth 0 = root planner (strong), depth 1 = mid (cheap+fast), depth 2+ = leaves (tiny).
+# Confirmed live on Crusoe 2026-10-17 via `done models` (see DECISIONS.md).
 DEFAULT_TIERS: dict[int, str] = {
     0: "deepseek-ai/DeepSeek-V4-Pro",
     1: "openai/gpt-oss-120b",
-    2: "nvidia/Nemotron-3-Nano-30B-A3B",
+    2: "nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B",
 }
 
 # A node's verifier must be a DIFFERENT FAMILY than the node's own model.
+# Families as the live IDs actually spell them: "deepseek-ai", "zai-org", not "deepseek"/"zai".
 DEFAULT_VERIFIER_FOR_FAMILY: dict[str, str] = {
     "nvidia": "openai/gpt-oss-120b",
     "openai": "google/gemma-4-31b-it",
-    "deepseek": "zai/GLM-5.1",
-    "zai": "deepseek-ai/DeepSeek-V4-Flash",
-    "google": "nvidia/Nemotron-3-Super-120B-A12B",
-    "meta": "openai/gpt-oss-120b",
+    "deepseek-ai": "zai-org/GLM-5.3",
+    "zai-org": "deepseek-ai/DeepSeek-V4.1-Flash",
+    "google": "nvidia/NVIDIA-Nemotron-3-Super-120B-A12B",
+    "qwen": "openai/gpt-oss-120b",
 }
 
-DEFAULT_FALLBACK_MODEL = "meta-llama/Llama-3.3-70B-Instruct"
+# No meta-llama on Crusoe; gpt-oss-120b is the cheap always-there model.
+DEFAULT_FALLBACK_MODEL = "openai/gpt-oss-120b"
 
 # Cheap model used only by the drift judge (monitor), never for real work.
-DEFAULT_DRIFT_JUDGE = "nvidia/Nemotron-3-Nano-30B-A3B"
+DEFAULT_DRIFT_JUDGE = "nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B"
 
 # USD per 1M tokens, (prompt, completion). Used for the cost line in the report.
 DEFAULT_PRICES: dict[str, tuple[float, float]] = {
     "openai/gpt-oss-120b": (0.05, 0.20),
     "google/gemma-4-31b-it": (0.14, 0.40),
     "deepseek-ai/DeepSeek-V4-Pro": (0.50, 2.00),
-    "deepseek-ai/DeepSeek-V4-Flash": (0.50, 2.00),
-    "zai/GLM-5.1": (1.00, 4.00),
-    "moonshotai/Kimi-K2-Instruct": (0.70, 4.00),
-    "nvidia/Nemotron-3-Nano-30B-A3B": (0.05, 0.20),
-    "nvidia/Nemotron-3-Super-120B-A12B": (0.05, 0.20),
-    "meta-llama/Llama-3.3-70B-Instruct": (0.20, 0.60),
+    "deepseek-ai/DeepSeek-V4.1-Flash": (0.27, 1.10),
+    "deepseek-ai/Deepseek-V4-Flash": (0.27, 1.10),
+    "zai-org/GLM-5.3": (1.00, 4.00),
+    "zai-org/GLM-5.3-Flash": (0.20, 0.80),
+    "nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B": (0.05, 0.20),
+    "nvidia/NVIDIA-Nemotron-3-Super-120B-A12B": (0.10, 0.40),
+    "nvidia/Nemotron-3.5-Lightning-30B-A3B": (0.05, 0.20),
+    "Qwen/Qwen3.8-27B": (0.10, 0.30),
 }
 UNKNOWN_PRICE = (0.30, 1.20)  # conservative guess so cost is never silently 0
 
@@ -71,6 +76,11 @@ class Config:
     # budget
     RESERVE_FRACTION: float = 0.15
     MIN_LEAF_BUDGET: int = 3_000
+    # A worker may spend at most this share of its NODE's allocation; the rest belongs to
+    # writing the checks, verifying them, and one retry. Verification cost scales with the
+    # number of nodes, so a single global reserve is the wrong shape. (DECISIONS 14:15)
+    WORKER_SHARE: float = 0.60
+    MIN_VERIFY_RESERVE: int = 6_000
 
     # llm
     MAX_CONCURRENT_LLM: int = 6
@@ -80,10 +90,10 @@ class Config:
 
     # monitor
     LOOP_REPEAT_THRESHOLD: int = 3
-    NO_PROGRESS_STEPS: int = 8
+    NO_PROGRESS_STEPS: int = 5
     DRIFT_EVERY_N_STEPS: int = 6
     DRIFT_THRESHOLD: int = 7
-    BUDGET_WARN_FRACTION: float = 0.90
+    BUDGET_WARN_FRACTION: float = 0.55   # warn just before the worker's hard ceiling
 
     tiers: dict[int, str] = field(default_factory=lambda: dict(DEFAULT_TIERS))
     verifier_for_family: dict[str, str] = field(
@@ -111,6 +121,13 @@ class Config:
             if family(candidate) != fam:
                 return candidate
         raise ValueError(f"no cross-family verifier available for {worker_model!r}")
+
+    def cross_family_fallbacks(self, worker_model: str) -> list[str]:
+        """Models of a different family than the worker, for llm.py to fall back onto."""
+        fam = family(worker_model)
+        pool = list(dict.fromkeys(list(self.verifier_for_family.values())
+                                  + list(self.tiers.values()) + [self.fallback_model]))
+        return [m for m in pool if family(m) != fam]
 
     def price_for(self, model_id: str) -> tuple[float, float]:
         return self.prices.get(model_id, UNKNOWN_PRICE)

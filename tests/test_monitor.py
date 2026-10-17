@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import json
+
 from done import monitor
 
 
@@ -88,3 +90,24 @@ async def test_unexpected_write_path_is_detected(node_factory):
     assert monitor._unexpected_path("cli.py", node) is False
     assert monitor._unexpected_path("tests/test_cli.py", node) is False
     assert monitor._unexpected_path("README.md", node) is False
+
+
+async def test_progress_clears_loop_suspicion(ctx, node_factory):
+    """Re-running the checks after a fix is the behaviour we ask for, not a loop.
+
+    The first live run flagged LOOP on the very run_checks call that reached 7/7.
+    """
+    node = node_factory()
+    rc = lambda n: ("run_checks", {}, json.dumps({"passed": n, "total": 7}))
+    assert await _steps(node, ctx, [rc(6), rc(6)]) == "OK"
+    # third identical call, but the pass count improved: suspicion resets
+    assert await monitor.step(node, {"name": "run_checks", "args": {},
+                                     "result": json.dumps({"passed": 7, "total": 7})}, ctx) == "OK"
+    assert not node.flags
+
+
+async def test_a_genuinely_stuck_check_loop_is_still_caught(ctx, node_factory):
+    """The counterpart: same call, same result, three times, is still a loop."""
+    node = node_factory()
+    rc = ("run_checks", {}, json.dumps({"passed": 4, "total": 7}))
+    assert await _steps(node, ctx, [rc, rc, rc]) == "LOOP"

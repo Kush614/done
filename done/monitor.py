@@ -72,8 +72,16 @@ async def step(node: Node, tool_call: dict, ctx) -> Flag:
         if passes == st.last_pass_count:
             st.steps_since_pass_change += 1
         else:
+            # The world changed, so repetition up to now was not a loop: re-running the checks
+            # after a fix is exactly the behaviour we ask for. Clearing the history stops the
+            # exact-loop rule firing on the very call that reached a passing state.
+            improved = st.last_pass_count is not None and passes > st.last_pass_count
             st.steps_since_pass_change = 0
             st.last_pass_count = passes
+            if improved:
+                st.hashes = [h]
+                ctx.trace.event("loop_suspicion_cleared", node.id, passes=passes,
+                                reason="check pass count improved")
 
     # --- 1. exact loop ------------------------------------------------------
     repeats = st.hashes.count(h)

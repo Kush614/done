@@ -19,16 +19,36 @@ class BudgetExhausted(RuntimeError):
     """Raised before a call that the remaining budget cannot cover."""
 
 
+# Verification is the one thing a run may not run out of money for: an unjudged node is
+# indistinguishable from a lying one. These tags may dip into the reserve; nothing else may.
+VERIFY_TAGS = {"verifier", "meta_verifier"}
+
+
 @dataclass
 class Budget:
     total: int
     used: int = 0
     cost_usd: float = 0.0
+    verify_reserve_fraction: float = 0.12
+    min_verify_reserve: int = 6_000
     by_model: dict[str, dict[str, float | int]] = field(default_factory=dict)
 
     @property
+    def verify_reserve(self) -> int:
+        """Enough for BOTH verification calls (meta-verify, then adjudicate) with their
+        prompts, never more than 40% of the run."""
+        floor = min(self.min_verify_reserve, int(self.total * 0.40))
+        return max(int(self.total * self.verify_reserve_fraction), floor)
+
+    @property
     def remaining(self) -> int:
-        return max(0, self.total - self.used)
+        """What work may spend: the reserve is invisible to everything but verification."""
+        return max(0, self.total - self.used - self.verify_reserve)
+
+    def remaining_for(self, tag: str) -> int:
+        if tag in VERIFY_TAGS:
+            return max(0, self.total - self.used)
+        return self.remaining
 
     def spend(self, model: str, prompt: int, completion: int, cfg: Config) -> float:
         self.used += prompt + completion
@@ -107,6 +127,7 @@ async def chat(
     temperature: float = 0.2,
     tag: str,
     ctx: Any = None,
+    fallback: str | list[str] | None = None,
 ) -> LLMResult:
     """One chat completion. Charges the run budget, traces the call, never dies on an outage."""
     cfg: Config = getattr(ctx, "cfg", None) or load_config()
@@ -114,23 +135,25 @@ async def chat(
     trace = getattr(ctx, "trace", None)
     node_id = getattr(ctx, "_current_node_id", None)
 
-    if budget is not None and budget.remaining < max_tokens:
+    if budget is not None and budget.remaining_for(tag) < max_tokens:
         raise BudgetExhausted(
-            f"budget has {budget.remaining} tokens left, call reserves {max_tokens}"
+            f"budget has {budget.remaining_for(tag)} tokens left for {tag!r}, "
+            f"call reserves {max_tokens}"
         )
 
     client()  # fail fast and loudly on a missing key instead of retrying it six times
 
-    attempt_models = [model]
-    if cfg.fallback_model != model:
-        attempt_models.append(cfg.fallback_model)
+    # An explicit `fallback` chain matters for verification: a replacement model from the
+    # worker's own family would void the cross-family independence guarantee.
+    chain = ([fallback] if isinstance(fallback, str) else list(fallback or [])) or [cfg.fallback_model]
+    attempt_models = [model] + [m for m in chain if m != model]
 
     last_err: Exception | None = None
     for use_model in attempt_models:
-        if _consecutive_errors.get(use_model, 0) >= 2 and use_model != cfg.fallback_model:
+        if _consecutive_errors.get(use_model, 0) >= 2 and use_model != attempt_models[-1]:
             if trace:
                 trace.event("model_fallback", node_id, from_model=use_model,
-                            to_model=cfg.fallback_model, reason="2 consecutive errors")
+                            to_model=attempt_models[-1], reason="2 consecutive errors")
             continue
         for attempt in range(cfg.RETRIES):
             kwargs: dict[str, Any] = {

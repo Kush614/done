@@ -46,7 +46,14 @@ async def execute(node: Node, ctx, *, attempt: int = 1,
     ]
 
     out = WorkerOutcome()
+    ceiling = int(node.budget_tokens * ctx.cfg.WORKER_SHARE) if node.budget_tokens else 0
     for step in range(ctx.cfg.MAX_TOOL_STEPS_PER_LEAF):
+        if ceiling and node.tokens_used >= ceiling:
+            out.interrupted_by = "BUDGET"
+            node.log(f"worker hit its share of the node budget ({node.tokens_used}/{ceiling}); "
+                     f"the rest is reserved for verification")
+            break
+        messages = _trim(messages)
         try:
             res = await llm.chat(
                 node.model, messages, tools=tools.TOOL_SCHEMAS,
@@ -58,6 +65,7 @@ async def execute(node: Node, ctx, *, attempt: int = 1,
             node.log("worker stopped: node budget exhausted")
             break
 
+        node.tokens_used += res.usage.get("total", 0)
         if not res.tool_calls:
             content = (res.content or "").strip()
             messages.append({"role": "assistant", "content": content or "(no content)"})
@@ -88,7 +96,7 @@ async def execute(node: Node, ctx, *, attempt: int = 1,
             name = tc.function.name
             args = tools.parse_args(tc.function.arguments)
             result = await tools.dispatch(name, args, node, ctx, runner="worker")
-            messages.append({"role": "tool", "tool_call_id": tc.id, "content": result[:6000]})
+            messages.append({"role": "tool", "tool_call_id": tc.id, "content": result[:3000]})
             node.tool_steps += 1
             out.steps += 1
             ctx.trace.event("tool_call", node.id, tool=name, args=_safe_args(args),
@@ -135,6 +143,27 @@ async def execute(node: Node, ctx, *, attempt: int = 1,
                     claimed_done=out.claimed_done, interrupted_by=out.interrupted_by,
                     self_checks=f"{summary['passed']}/{summary['total']}", steps=out.steps)
     return out
+
+
+MAX_HISTORY_MESSAGES = 16
+
+
+def _trim(messages: list[dict]) -> list[dict]:
+    """Keep the system prompt, the original instruction, and the most recent exchanges.
+
+    Without this, every worker call re-sends the whole transcript: the first live run spent
+    23k tokens because nine steps of accumulated tool output rode along on each call.
+    The cut never orphans a `tool` reply from its `assistant` tool_calls message.
+    """
+    if len(messages) <= MAX_HISTORY_MESSAGES:
+        return messages
+    head, tail = messages[:2], messages[2:]
+    cut = max(0, len(tail) - (MAX_HISTORY_MESSAGES - 3))
+    while cut < len(tail) and tail[cut].get("role") == "tool":
+        cut += 1
+    note = {"role": "user", "content": "[earlier steps elided to save budget — call run_checks "
+                                       "if you need the current state of the checks.]"}
+    return head + [note] + tail[cut:]
 
 
 def _safe_args(args: dict) -> dict:
