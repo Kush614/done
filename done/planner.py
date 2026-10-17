@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import re
+
 from . import llm
 from .models import Node
 from .prompts import node_vars, render
@@ -36,6 +38,40 @@ async def decide(node: Node, ctx) -> tuple[str, list[dict]]:
     reasoning = str(data.get("reasoning", ""))[:600]
 
     subgoals = _clean_subgoals(data.get("subgoals"), node, ctx)
+
+    # The root's job is decomposition. It was answering EXECUTE for a four-artifact goal about
+    # half the time, which put leaf work on the most expensive model in the config and made the
+    # run cost MORE than the all-root-model baseline. Ask once more, explicitly. (DECISIONS 15:55)
+    if (decision == "EXECUTE" and node.depth == 0 and not subgoals
+            and node.budget_tokens >= ctx.cfg.MIN_SPLIT_BUDGET * 4
+            and not _names_one_file(node.goal)):
+        ctx.trace.event("root_execute_challenged", node.id, reasoning=reasoning)
+        node.log("root chose EXECUTE for a multi-artifact goal — re-asking for a decomposition")
+        res2 = await llm.chat(
+            node.model,
+            [{"role": "user", "content": prompt},
+             {"role": "assistant", "content": res.content or ""},
+             {"role": "user", "content":
+                 "You are the ROOT of the tree and your budget is large. Decomposing is your "
+                 "job: the cheaper models below you exist to do the work, and each piece gets "
+                 "verified in isolation only if it is its own sub-goal. Unless this goal is "
+                 "literally a single file, split it. List the artifacts it contains, then "
+                 "return the same JSON object with decision SPLIT and one sub-goal per "
+                 "artifact, each naming its own files and honouring the layout in your "
+                 "assumptions."}],
+            json_mode=True, max_tokens=1400, tag="planner", ctx=ctx,
+        )
+        data2 = res2.json()
+        subgoals2 = _clean_subgoals(data2.get("subgoals"), node, ctx)
+        if len(subgoals2) >= 2:
+            decision, subgoals = "SPLIT", subgoals2
+            reasoning = str(data2.get("reasoning", reasoning))[:600]
+            extra = [str(a).strip() for a in (data2.get("assumptions") or []) if str(a).strip()]
+            if extra:
+                node.assumptions = extra[:8]
+        else:
+            node.log("root stood by EXECUTE on a second ask; accepting it")
+
     if decision == "SPLIT" and len(subgoals) < 2:
         decision = "EXECUTE"  # a "split" into one child is just a loop wearing a hat
         node.log("planner proposed <2 sub-goals; treating as EXECUTE")
@@ -119,6 +155,14 @@ def _clean_subgoals(raw, node: Node, ctx, limit: int | None = None) -> list[dict
             for s in out:
                 s["budget_share"] /= total
     return out
+
+
+_ONE_FILE = re.compile(r"[\w./-]+\.(?:py|md|txt|json|toml|cfg|ini|sh|yaml|yml|html|css|js)\b")
+
+
+def _names_one_file(goal: str) -> bool:
+    named = {m.group(0).lstrip("./") for m in _ONE_FILE.finditer(goal)}
+    return len(named) == 1
 
 
 def _is_restatement(subgoal: str, parent_goal: str) -> bool:

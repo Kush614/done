@@ -204,3 +204,68 @@ def _execute():
     async def inner():
         return "EXECUTE", []
     return inner()
+
+
+async def test_the_root_is_challenged_when_it_declines_to_decompose(ctx, node_factory,
+                                                                    monkeypatch):
+    """The root answered EXECUTE for a four-artifact goal about half the time, which put leaf
+    work on the most expensive model and made the run cost more than the baseline."""
+    from done import llm, planner as planner_mod
+    from done.llm import LLMResult
+
+    replies = [
+        {"decision": "EXECUTE", "reasoning": "I can just write all four files",
+         "assumptions": [], "subgoals": []},
+        {"decision": "SPLIT", "reasoning": "four artifacts",
+         "assumptions": ["layout: storage.py, cli.py, tests/test_x.py, README.md"],
+         "subgoals": [
+             {"goal": "write storage.py with load and save", "why": "", "budget_share": 0.5,
+              "prerequisite": True},
+             {"goal": "write cli.py on top of storage.py", "why": "", "budget_share": 0.5},
+         ]},
+    ]
+    seen = []
+
+    async def fake_chat(model, messages, **kw):
+        seen.append(kw.get("tag"))
+        import json as _json
+        return LLMResult(content=_json.dumps(replies[min(len(seen) - 1, 1)]),
+                         tool_calls=[], usage={"prompt": 100, "completion": 50, "total": 150},
+                         model_used=model, latency_ms=1)
+
+    monkeypatch.setattr(llm, "chat", fake_chat)
+    monkeypatch.setattr(planner_mod.llm, "chat", fake_chat)
+
+    node = node_factory(depth=0, budget_tokens=200_000,
+                        goal="Build a CLI with four commands, JSON storage, tests and a README")
+    decision, subgoals = await planner_mod.decide(node, ctx)
+
+    assert decision == "SPLIT", "the root was not challenged"
+    assert len(subgoals) == 2
+    assert subgoals[0]["prerequisite"] is True
+    assert seen == ["planner", "planner"], "exactly one extra ask, not a loop"
+
+
+async def test_a_single_file_root_goal_is_not_challenged(ctx, node_factory, monkeypatch):
+    """The challenge must not badger a root whose goal really is one file."""
+    from done import llm, planner as planner_mod
+    from done.llm import LLMResult
+    import json as _json
+
+    calls = []
+
+    async def fake_chat(model, messages, **kw):
+        calls.append(kw.get("tag"))
+        return LLMResult(content=_json.dumps({"decision": "EXECUTE", "reasoning": "one file",
+                                              "assumptions": [], "subgoals": []}),
+                         tool_calls=[], usage={"prompt": 100, "completion": 50, "total": 150},
+                         model_used=model, latency_ms=1)
+
+    monkeypatch.setattr(llm, "chat", fake_chat)
+    monkeypatch.setattr(planner_mod.llm, "chat", fake_chat)
+
+    node = node_factory(depth=0, budget_tokens=200_000,
+                        goal="Write fib.py that prints the first 10 Fibonacci numbers")
+    decision, subgoals = await planner_mod.decide(node, ctx)
+    assert decision == "EXECUTE"
+    assert calls == ["planner"], "a one-file goal must not be re-asked"
