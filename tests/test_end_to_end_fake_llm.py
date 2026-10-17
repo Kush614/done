@@ -109,7 +109,8 @@ class FakeModels:
                 "assumptions": ["notes live in ./notes.json", "ids are integers starting at 1"],
                 "subgoals": [
                     {"goal": "write storage.py exposing load/save/add/search over notes.json",
-                     "why": "everything else builds on it", "budget_share": 0.6},
+                     "why": "everything else builds on it", "budget_share": 0.6,
+                     "prerequisite": True},
                     {"goal": "write tests/test_storage.py covering case-insensitive search",
                      "why": "proves search behaviour", "budget_share": 0.4},
                 ],
@@ -348,3 +349,28 @@ async def test_parallel_siblings_do_not_cross_charge_tokens(ctx, node_factory, f
     assert root.subtree_tokens == root.tokens_used + sum(k.tokens_used for k in kids)
     # and the run total is the sum of the parts, charged exactly once
     assert ctx.budget.used == sum(n.tokens_used for n in ctx.nodes.values())
+
+
+async def test_the_prerequisite_runs_first_and_siblings_see_its_real_artifacts(
+        ctx, node_factory, fake):
+    """Siblings cannot talk to each other, so the shared foundation must exist — and be
+    observable — before they start. One live run had storage.py written flat by one sibling
+    while another built a notes/ package and a third's tests could find neither."""
+    fake(split=True)
+    root = await solver.solve(node_factory(model="deepseek-ai/DeepSeek-V4-Pro"), ctx)
+
+    events = [json.loads(l) for l in (ctx.run_dir / "events.jsonl").read_text().splitlines()]
+    first = [e for e in events if e["type"] == "prerequisite_first"]
+    assert first and first[0]["payload"]["child"] == "root.1"
+
+    sibling = ctx.nodes["root.2"]
+    assert "HAS ALREADY FINISHED" in sibling.ancestors_context
+    assert "storage.py" in sibling.ancestors_context, "the real workspace listing reached it"
+    assert "do not re-implement" in sibling.ancestors_context.lower()
+
+    # ordering: the prerequisite's tool calls all precede the sibling's first one
+    tool_calls = [e for e in events if e["type"] == "tool_call"]
+    last_prereq = max(i for i, e in enumerate(tool_calls) if e["node_id"] == "root.1")
+    first_sibling = min(i for i, e in enumerate(tool_calls) if e["node_id"] == "root.2")
+    assert last_prereq < first_sibling
+    assert root.status == "done"

@@ -8,11 +8,25 @@ different model family signing off (that gate lives in verify_and_decide).
 from __future__ import annotations
 
 import asyncio
+import re
 
 from . import dod_writer, llm, monitor, planner, verifier, worker
 from .config import family
 from .models import Node
 from .prompts import node_vars, render
+
+
+_ARTIFACT = re.compile(r"[\w./-]+\.(?:py|md|txt|json|toml|cfg|ini|sh|yaml|yml|html|css|js)\b")
+
+
+def _single_artifact(goal: str) -> bool:
+    """True when the goal names exactly one file. One file is one artifact: do it, do not split it.
+
+    Only fires when the goal is explicit about paths, which is exactly the case where a parent
+    has already done the decomposition.
+    """
+    named = {m.group(0).lstrip("./") for m in _ARTIFACT.finditer(goal)}
+    return len(named) == 1
 
 
 async def solve(node: Node, ctx) -> Node:
@@ -27,6 +41,14 @@ async def solve(node: Node, ctx) -> Node:
     elif node.budget_tokens < ctx.cfg.MIN_SPLIT_BUDGET:
         node.decision = "EXECUTE"
         node.log(f"budget {node.budget_tokens} < {ctx.cfg.MIN_SPLIT_BUDGET} → must EXECUTE")
+        subgoals = []
+    elif _single_artifact(node.goal):
+        # Deterministic, because the planner cannot be trusted with it: a sub-goal that names
+        # exactly one file is one artifact, and splitting it produced four Nemotron leaves
+        # arguing over one module while their siblings got nothing. (DECISIONS 15:20)
+        node.decision = "EXECUTE"
+        node.log("goal names a single artifact → EXECUTE (no planner call)")
+        ctx.trace.event("single_artifact", node.id, goal=node.goal)
         subgoals = []
     else:
         try:
@@ -48,8 +70,31 @@ async def _split(node: Node, subgoals: list[dict], ctx) -> Node:
                     children=[{"id": c.id, "goal": c.goal, "budget": c.budget_tokens,
                                "model": c.model} for c in children])
 
-    results = await asyncio.gather(*(solve(c, ctx) for c in children),
-                                   return_exceptions=True)
+    # A declared prerequisite runs alone, first. Siblings then start from the workspace as it
+    # ACTUALLY is, not from a description of what the prerequisite was supposed to produce.
+    # Without this, one sibling wrote storage.py flat while another built a notes/ package and
+    # a third's tests could find neither. (DECISIONS 15:10)
+    prereq = next((c for c in children if c.is_prerequisite), None)
+    results: list = []
+    if prereq is not None and len(children) > 1:
+        ctx.trace.event("prerequisite_first", node.id, child=prereq.id, goal=prereq.goal)
+        try:
+            first = await solve(prereq, ctx)
+        except BaseException as exc:  # noqa: BLE001 - recorded per-child below
+            first = exc
+        results.append(first)
+        rest = [c for c in children if c is not prereq]
+        if isinstance(first, Node):
+            shared = _prerequisite_context(node, first, ctx)
+            for c in rest:
+                c.ancestors_context = shared
+        ctx.enter(node)
+        results += list(await asyncio.gather(*(solve(c, ctx) for c in rest),
+                                             return_exceptions=True))
+        children = [prereq] + rest
+    else:
+        results = list(await asyncio.gather(*(solve(c, ctx) for c in children),
+                                            return_exceptions=True))
     settled: list[Node] = []
     for child, result in zip(children, results):
         if isinstance(result, BaseException):
@@ -108,8 +153,24 @@ def make_children(node: Node, subgoals: list[dict], ctx) -> list[Node]:
             ancestors_context=context,
             budget_tokens=alloc,
             model=ctx.cfg.model_for_depth(depth),
+            is_prerequisite=bool(sg.get("prerequisite")),
         ))
     return children
+
+
+def _prerequisite_context(parent: Node, prereq: Node, ctx) -> str:
+    """What the prerequisite actually built, as the siblings' starting truth."""
+    lines = [prereq.ancestors_context.strip()] if prereq.ancestors_context else []
+    lines.append(f"- [{prereq.id}] HAS ALREADY FINISHED ({prereq.status}): {prereq.goal}")
+    if prereq.final_report:
+        lines.append(f"  it reports: {prereq.final_report.strip()}")
+    lines.append("  Its files are already in the workspace. The workspace right now contains:")
+    for entry in ctx.sandbox.snapshot().splitlines()[:40]:
+        lines.append(f"    {entry}")
+    lines.append("  USE these files and these exact paths. Do not create a parallel layout, do "
+                 "not rename them, and do not re-implement what they already provide — read them "
+                 "first with read_file if you need the interface.")
+    return "\n".join(lines)
 
 
 def _child_context(node: Node, subgoals: list[dict]) -> str:

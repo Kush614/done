@@ -19,10 +19,14 @@ BASE_URL = os.environ.get("CRUSOE_BASE_URL", "https://api.inference.crusoecloud.
 # --- model tiers ------------------------------------------------------------
 # depth 0 = root planner (strong), depth 1 = mid (cheap+fast), depth 2+ = leaves (tiny).
 # Confirmed live on Crusoe 2026-10-17 via `done models` (see DECISIONS.md).
+# depth 0 plans; every node that does actual work runs on Nemotron-3-Super, and a cheaper
+# model from a different family verifies it. Measured, not assumed: Nemotron Nano at the leaves
+# burned 23-39k tokens per node and failed most checks, while Super finished the same work in
+# 14k and 3 tool steps. (DECISIONS 15:25)
 DEFAULT_TIERS: dict[int, str] = {
     0: "deepseek-ai/DeepSeek-V4-Pro",
-    1: "openai/gpt-oss-120b",
-    2: "nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B",
+    1: "nvidia/NVIDIA-Nemotron-3-Super-120B-A12B",
+    2: "nvidia/NVIDIA-Nemotron-3-Super-120B-A12B",
 }
 
 # A node's verifier must be a DIFFERENT FAMILY than the node's own model.

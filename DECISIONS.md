@@ -91,3 +91,25 @@ Format: `HH:MM — decision — why`
   path, shared by the real client and the test double so attribution is genuinely under test.
 - **15:00 — Subtree totals are recomputed on every tree write.** A rollup taken when the children
   finished went stale as soon as the parent paid for its own integration checks and verification.
+- **15:10 — A declared shared prerequisite runs FIRST, alone, and its real artifacts go into its
+  siblings' context.** Parallel siblings cannot talk to each other, and a described interface is not
+  the same as a built one: on one live run `root.1` wrote `storage.py` flat, `root.2` built a
+  `notes/` package, and `root.3`'s tests could find neither. The planner now also owns the file
+  layout — its first assumption must spell out every path — and siblings are handed a real
+  directory listing of what the prerequisite actually produced.
+- **15:10 — Checks may not assert the absence of files the program itself creates.** Siblings share
+  one workspace by design (so the pieces compose), so `test ! -f notes.json` failed the moment any
+  sibling ran the program once. The prompt now requires a temp directory for anything that writes.
+- **15:20 — Node budgets are enforced hierarchically, not advisory.** Every call is charged to the
+  node AND its whole ancestor chain, and a call is refused when the node's subtree has spent its
+  allocation. Before this, one branch consumed 211k of a 250k run against its own 63k allocation
+  and its three siblings got literally zero tokens. Verification is exempt and protected by the
+  run-level reserve, because a node must always be able to afford a verdict.
+- **15:20 — A goal that names exactly one file may not split, deterministically.** The planner split
+  "write storage.py exposing load/save/add/search" into four sub-goals that then argued over one
+  module. This is a regex on the goal text, not a request to the model, because the model had
+  already been asked nicely and declined.
+- **15:25 — Nemotron-3-Super is the worker tier; Nano stays the drift judge. Measured, not guessed.**
+  Nano at the leaves: 23-39k tokens per node, checks landing 1/3, 1/5, 0/2, one node of seven done.
+  Nemotron-3-Super on the same shape of work: DONE, 3/3 checks, 3 tool steps, 14k tokens. Nano is
+  kept for what it is genuinely good at — scoring drift 0-10 — where it has worked every time.

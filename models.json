@@ -17,8 +17,8 @@
   ],
   "tiers": {
     "0": "deepseek-ai/DeepSeek-V4-Pro",
-    "1": "openai/gpt-oss-120b",
-    "2": "nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B"
+    "1": "nvidia/NVIDIA-Nemotron-3-Super-120B-A12B",
+    "2": "nvidia/NVIDIA-Nemotron-3-Super-120B-A12B"
   },
   "verifier_for_family": {
     "nvidia": "openai/gpt-oss-120b",

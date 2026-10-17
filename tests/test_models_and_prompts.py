@@ -18,13 +18,25 @@ LIVE_SAMPLE = [
 ]
 
 
-def test_tiers_are_cheap_at_the_leaves_and_strong_at_the_root():
+def test_tiers_put_the_strong_planner_at_the_root_and_a_real_worker_below():
+    """Nano at the leaves was measured and rejected: 23-39k tokens per node, most checks
+    failing, where Super finished the same work in 14k. The tiniest model keeps the job it is
+    actually good at — scoring drift 0-10."""
     picked = _pick_tiers(LIVE_SAMPLE, Config())
     assert picked["tiers"]["0"] == "deepseek-ai/DeepSeek-V4-Pro"
-    assert picked["tiers"]["1"] == "openai/gpt-oss-120b"
-    assert "Nano" in picked["tiers"]["2"]
+    assert "Nemotron-3-Super" in picked["tiers"]["1"]
+    assert "Nemotron-3-Super" in picked["tiers"]["2"]
     assert "Nano" in picked["drift_judge_model"]
     assert all(v in LIVE_SAMPLE for v in picked["tiers"].values())
+    assert picked["drift_judge_model"] in LIVE_SAMPLE
+
+
+def test_the_worker_tier_is_always_verified_by_another_family():
+    picked = _pick_tiers(LIVE_SAMPLE, Config())
+    cfg = Config()
+    cfg.verifier_for_family = picked["verifier_for_family"]
+    for depth, model in picked["tiers"].items():
+        assert family(cfg.verifier_for(model)) != family(model), f"depth {depth} self-verifies"
 
 
 def test_verifier_map_never_lets_a_family_verify_itself():

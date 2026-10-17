@@ -94,9 +94,18 @@ def _clean_subgoals(raw, node: Node, ctx, limit: int | None = None) -> list[dict
             share = float(item.get("budget_share", 0) or 0)
         except (TypeError, ValueError):
             share = 0.0
-        out.append({"goal": goal, "why": str(item.get("why", ""))[:400], "budget_share": share})
+        out.append({"goal": goal, "why": str(item.get("why", ""))[:400], "budget_share": share,
+                    "prerequisite": bool(item.get("prerequisite"))})
         if len(out) >= limit:
             break
+    # at most one prerequisite, and only if it is not the only child
+    prereqs = [s for s in out if s["prerequisite"]]
+    for extra in prereqs[1:]:
+        extra["prerequisite"] = False
+    if len(out) < 2:
+        for s in out:
+            s["prerequisite"] = False
+
     total = sum(s["budget_share"] for s in out)
     if out:
         if total <= 0:

@@ -27,6 +27,15 @@ RULES
    - Prefer one `python3 -c "..."` that asserts, over a pipeline of five shell utilities. A
      failed `assert` already exits non-zero, which is exactly the contract.
    - Do not rely on colour, locale, or line-ending details.
+3b. YOU ARE NOT ALONE IN THIS WORKSPACE. Other agents may be writing their own files here at
+   the same time, and running the program creates data files. So:
+   - Never assert the absence of something the program itself creates (`test ! -f notes.json`
+     will fail the moment any sibling runs the program once). Run the program in a temp
+     directory instead: `tmp=$(mktemp -d); cd "$tmp"; ...`.
+   - Never assert that a file you did not create is absent.
+   - A negative check should be about a *guarantee* (a bad input must be rejected, a destructive
+     path must refuse without --force), not about workspace tidiness.
+
 4. At most ONE `llm_judge` check, only for something genuinely subjective (readability of prose),
    and it must carry a rubric in `judge_prompt`.
 5. Checks must test the GOAL, not the implementation's incidentals. A check that passes while the

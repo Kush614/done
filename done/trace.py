@@ -51,29 +51,7 @@ class Trace:
         self._meta.update(kw)
         self.write_tree()
 
-    def _recompute_subtrees(self) -> None:
-        """Subtree totals, bottom-up, fresh on every write. A snapshot taken when the children
-        finished went stale the moment the parent paid for its own verification."""
-        def total(nid: str, seen: frozenset[str]) -> tuple[int, float]:
-            node = self.nodes.get(nid)
-            if node is None or nid in seen:
-                return 0, 0.0
-            seen = seen | {nid}
-            tok, cost = node.tokens_used, node.cost_usd
-            for cid in node.children:
-                ct, cc = total(cid, seen)
-                tok += ct
-                cost += cc
-            node.subtree_tokens = tok
-            node.subtree_cost_usd = round(cost, 6)
-            return tok, cost
-
-        for nid in list(self.nodes):
-            if self.nodes[nid].parent_id is None:
-                total(nid, frozenset())
-
     def write_tree(self) -> None:
-        self._recompute_subtrees()
         payload = {
             "root_goal": self.root_goal,
             "budget_total": self.budget_total,

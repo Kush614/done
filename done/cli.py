@@ -60,9 +60,11 @@ async def _models(write: bool) -> int:
 
 # preference order within each tier, best first. Matched by substring against live ids.
 ROOT_PREFS = ["deepseek-v4-pro", "deepseek-v3", "glm-5", "glm-4", "kimi", "deepseek", "llama-3.3-70b"]
-MID_PREFS = ["gpt-oss-120b", "nemotron-3-super", "nemotron-super", "gemma-4", "gemma-3", "llama-3.3-70b"]
-LEAF_PREFS = ["nemotron-3-nano", "nemotron-nano", "nemotron-mini", "gemma-4", "gemma-3",
-              "gpt-oss-20b", "gpt-oss-120b"]
+MID_PREFS = ["nemotron-3-super", "nemotron-super", "gpt-oss-120b", "gemma-4", "llama-3.3-70b"]
+LEAF_PREFS = ["nemotron-3-super", "nemotron-super", "gpt-oss-120b", "gemma-4", "gemma-3"]
+# the drift judge only scores 0-10, so the tiniest model is right for it
+JUDGE_PREFS = ["nemotron-3-nano", "nemotron-nano", "nemotron-3.5-lightning", "gpt-oss-20b",
+               "gemma-4", "gpt-oss-120b"]
 
 
 def _pick_tiers(ids: list[str], cfg: Config) -> dict:
@@ -113,7 +115,7 @@ def _pick_tiers(ids: list[str], cfg: Config) -> dict:
                 verifier_for_family[fam] = best_of(sorted(others)[0])
 
     fallback = pick(["llama-3.3-70b", "gpt-oss-120b", "gemma"], cfg.fallback_model)
-    drift = pick(LEAF_PREFS, cfg.drift_judge_model)
+    drift = pick(JUDGE_PREFS, cfg.drift_judge_model)
     return {
         "probed_at": time.strftime("%Y-%m-%dT%H:%M:%S"),
         "live_models": ids,

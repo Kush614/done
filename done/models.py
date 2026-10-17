@@ -54,6 +54,7 @@ class Node(BaseModel):
     model: str = ""
     status: NodeStatus = "pending"
     decision: Literal["EXECUTE", "SPLIT"] | None = None
+    is_prerequisite: bool = False   # runs before its siblings; they see its real artifacts
     children: list[str] = Field(default_factory=list)
     assumptions: list[str] = Field(default_factory=list)
     dod: list[Check] = Field(default_factory=list)

@@ -81,11 +81,38 @@ def charge(ctx: Any, model: str, usage: dict) -> float:
     cfg: Config = getattr(ctx, "cfg", None) or load_config()
     prompt, completion = usage.get("prompt", 0), usage.get("completion", 0)
     cost = budget.spend(model, prompt, completion, cfg)
-    node = (getattr(ctx, "nodes", None) or {}).get(getattr(ctx, "_current_node_id", None))
+    nodes = getattr(ctx, "nodes", None) or {}
+    node = nodes.get(getattr(ctx, "_current_node_id", None))
+    total = usage.get("total") or (prompt + completion)
     if node is not None:
-        node.tokens_used += usage.get("total") or (prompt + completion)
+        node.tokens_used += total
         node.cost_usd += cost
+        # Charge the whole ancestor chain too, so `subtree_tokens` is live rather than
+        # recomputed after the fact. Without an enforced subtree total, one branch ate 211k
+        # of a 250k run against its own 63k allocation and starved its three siblings down
+        # to zero. A node's allocation has to be a limit, not a suggestion. (DECISIONS 15:20)
+        seen, cur = set(), node
+        while cur is not None and cur.id not in seen:
+            seen.add(cur.id)
+            cur.subtree_tokens += total
+            cur.subtree_cost_usd = round(cur.subtree_cost_usd + cost, 6)
+            cur = nodes.get(cur.parent_id) if cur.parent_id else None
     return cost
+
+
+def node_allocation_left(ctx: Any, tag: str) -> int | None:
+    """How much of its own allocation the current node's subtree still has.
+
+    Verification is exempt: a node must always be able to afford a verdict, and that spend is
+    protected by the run-level reserve instead.
+    """
+    if tag in VERIFY_TAGS:
+        return None
+    nodes = getattr(ctx, "nodes", None) or {}
+    node = nodes.get(getattr(ctx, "_current_node_id", None))
+    if node is None or not node.budget_tokens:
+        return None
+    return max(0, node.budget_tokens - node.subtree_tokens)
 
 
 @dataclass
@@ -157,7 +184,13 @@ async def chat(
 
     if budget is not None and budget.remaining_for(tag) < max_tokens:
         raise BudgetExhausted(
-            f"budget has {budget.remaining_for(tag)} tokens left for {tag!r}, "
+            f"run budget has {budget.remaining_for(tag)} tokens left for {tag!r}, "
+            f"call reserves {max_tokens}"
+        )
+    node_left = node_allocation_left(ctx, tag)
+    if node_left is not None and node_left < max_tokens:
+        raise BudgetExhausted(
+            f"this node's allocation has {node_left} tokens left for {tag!r}, "
             f"call reserves {max_tokens}"
         )
 

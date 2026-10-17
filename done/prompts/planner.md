@@ -36,12 +36,23 @@ These get carried to your children and printed in the final report. If an assump
 human can resolve (a credential, a server address, a business decision), say so by starting the
 line with "NEEDS HUMAN: ".
 
+IF YOU SPLIT, YOU OWN THE LAYOUT
+Your children work in the SAME workspace, at the same time, and they cannot talk to each other.
+Everything they must agree on, you must decide now:
+- Your FIRST assumption must be the exact file layout, every path spelled out, e.g.
+  "layout: storage.py, cli.py, tests/test_notes.py, README.md at the workspace root (flat, not a
+  package)". A child that invents its own layout breaks its siblings — this is the single most
+  common way a split fails.
+- Mark the ONE sub-goal that the others build on with `"prerequisite": true`. It runs FIRST, alone,
+  and its real artifacts are shown to the others before they start. At most one.
+- Every other sub-goal must reference the prerequisite's paths and interface by name.
+
 Return ONLY this JSON object:
 {
   "decision": "EXECUTE" | "SPLIT",
   "reasoning": "two or three sentences",
-  "assumptions": ["...", "..."],
-  "subgoals": [{"goal": "...", "why": "...", "budget_share": 0.3}],
+  "assumptions": ["layout: ...", "..."],
+  "subgoals": [{"goal": "...", "why": "...", "budget_share": 0.3, "prerequisite": false}],
   "leaf_signal": "single_tool_call" | "small_file" | "needs_decomposition"
 }
 `subgoals` must be [] when decision is EXECUTE, and 2-{{max_children}} items whose budget_share
@@ -56,4 +67,5 @@ JSON storage, tests and a README":
   3. "write tests/test_notes.py covering all four commands, including case-insensitive search
       and deleting a missing id"                                                         (0.25)
   4. "write README.md documenting all four commands with a usage example for each"        (0.15)
-Note sub-goal 1 is the shared prerequisite and names the exact interface the others depend on.
+Sub-goal 1 carries `"prerequisite": true` — it names the exact interface the others depend on,
+and it runs before them so they can read the real file rather than trusting this description.
