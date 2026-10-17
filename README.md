@@ -34,17 +34,30 @@ cp .env.example .env            # put your CRUSOE_API_KEY in it
 uv sync
 
 uv run done models              # FIRST: what Crusoe actually serves → writes models.json
-uv run done replay runs/demo-final/demo_01_tree   # a finished run, instantly, zero LLM calls
+uv run done replay runs/demo-final/demo_02_refusal  # a finished run, instantly, zero LLM calls
+uv run done index               # cache every run for the frontend
 uv run done run "@tasks/demo_00_live.txt"    # a live run, ~90 seconds
-uv run pytest -q                # 82 offline tests, ~15s
+uv run pytest -q                # 94 offline tests, ~15s
 ```
 
-Live tree viewer (static, no build step):
+Frontend (static, no build step, two pages):
 
 ```bash
+uv run done index               # cache every run into runs/index.json
 python3 -m http.server 8777     # from the repo root
-open http://localhost:8777/viewer/      # finds the newest run automatically
+open http://localhost:8777/viewer/      # gallery of every run
 ```
+
+- **`viewer/index.html`** — the gallery. Every run as a card: verdict, how many checks passed,
+  node count, how many model families touched it, tokens, cost, monitor flags, and any open
+  human question. Filter by verdict; click through to a run.
+- **`viewer/run.html?run=<id>`** — the trace for one run. The tree with live status colours,
+  and a side panel with that node's goal, the assumptions it declared, every check with its
+  `meta_verified` mark and output, the verifier's verdict and independent findings, monitor
+  flags, and the report it gave its parent. Polls every 500 ms, so it follows a live run.
+
+Both read `runs/index.json`, which `done run` refreshes automatically. Nothing scrapes a
+directory listing, so the whole frontend works on any static host.
 
 ## What makes a "done" claim trustworthy here
 
@@ -197,8 +210,10 @@ done/dod_writer.py  done/worker.py     done/verifier.py   done/monitor.py
 done/checks.py      done/tools.py      done/sandbox.py    done/trace.py
 done/context.py     done/models.py     done/report.py     done/cli.py
 done/prompts/*.md   (13 prompts, loaded at runtime, never inlined)
-viewer/index.html   (static tree viewer, vanilla JS, no build step)
-tests/              (82 offline tests: recursion invariants, monitor, sandbox jail,
+done/index.py       (caches every run into runs/index.json for the frontend)
+viewer/index.html   (gallery of every run)
+viewer/run.html     (one run's tree + checks + verdicts, polls live)
+tests/              (94 offline tests: recursion invariants, monitor, sandbox jail,
                      and a full end-to-end run with only the model calls faked)
 tasks/              (3 demo goals + 5 holdout goals)
 ```

@@ -15,6 +15,7 @@ from rich.live import Live
 from rich.table import Table
 
 from . import llm, report, solver
+from .index import build_index, write_index
 from .config import REPO_ROOT, Config, family, load_config, save_models_json
 from .context import RunContext
 from .llm import Budget
@@ -183,6 +184,8 @@ async def _run(goal: str, budget_tokens: int, out: Path, max_depth: int | None,
     trace.event("run_end", None, status=root.status, tokens=ctx.budget.used,
                 cost_usd=round(ctx.budget.cost_usd, 6), counters=ctx.counters)
 
+    write_index(out)   # keep the frontend's cache current without a separate step
+
     console.rule("[bold]final report")
     console.print(report.final_report(trace.nodes, ctx.budget, cfg, ctx.counters, goal, run_dir))
     (run_dir / "report.json").write_text(json.dumps({
@@ -213,6 +216,29 @@ def _replay(run_dir: Path) -> int:
     return 0
 
 
+# --------------------------------------------------------------------------- index
+def _index(runs_root: Path) -> int:
+    payload = build_index(runs_root)
+    path = write_index(runs_root)
+    t = payload["totals"]
+    table = Table(title=f"{t['runs']} runs cached → {path}", title_style="bold")
+    table.add_column("run"); table.add_column("verdict"); table.add_column("checks", justify="right")
+    table.add_column("nodes", justify="right"); table.add_column("cost", justify="right")
+    for r in payload["runs"][:25]:
+        style = report.STATUS_STYLE.get(r["status"], "white")
+        table.add_row(("★ " if r["preserved"] else "  ") + r["id"],
+                      f"[{style}]{r['verdict']}[/{style}]",
+                      f"{r['checks_passed']}/{r['checks_total']}",
+                      str(r["nodes"]), f"${r['cost_usd']:.4f}")
+    console.print(table)
+    console.print(f"[grey62]{t['checks_passed']}/{t['checks_total']} checks across all runs · "
+                  f"{t['tokens']:,} tokens · ${t['cost_usd']:.4f} total · "
+                  f"{len(t['families'])} model families[/grey62]")
+    console.print(f"[grey62]open the gallery: python3 -m http.server 8777 → "
+                  f"http://localhost:8777/viewer/[/grey62]")
+    return 0
+
+
 # --------------------------------------------------------------------------- entry
 def main(argv: list[str] | None = None) -> int:
     load_dotenv(REPO_ROOT / ".env")
@@ -234,12 +260,17 @@ def main(argv: list[str] | None = None) -> int:
     p_models = sub.add_parser("models", help="list live Crusoe models and write models.json")
     p_models.add_argument("--no-write", action="store_true")
 
+    p_index = sub.add_parser("index", help="cache a summary of every run into runs/index.json")
+    p_index.add_argument("--out", type=Path, default=REPO_ROOT / "runs")
+
     args = parser.parse_args(argv)
     try:
         if args.cmd == "models":
             return asyncio.run(_models(write=not args.no_write))
         if args.cmd == "replay":
             return _replay(args.run_dir)
+        if args.cmd == "index":
+            return _index(args.out)
         goal = args.goal
         if goal.startswith("@"):
             goal = Path(goal[1:]).read_text().strip()

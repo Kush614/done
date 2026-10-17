@@ -1,0 +1,235 @@
+<!doctype html>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>done — run trace</title>
+<style>
+  :root{
+    --bg:#0c0e12; --panel:#13161c; --line:#262b35; --ink:#e6e9ef; --dim:#8b93a3;
+    --pending:#5b6372; --planning:#4b8bf4; --executing:#a865f7; --verifying:#e0a92b;
+    --replanning:#30b6c4; --done:#2fbf71; --failed:#e5484d; --stopped:#e5484d;
+    --needs_human:#f07c28;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--ink);
+    font:13px/1.5 ui-monospace,SFMono-Regular,Menlo,monospace}
+  header{position:sticky;top:0;z-index:20;background:linear-gradient(#0c0e12f2,#0c0e12d9);
+    backdrop-filter:blur(6px);border-bottom:1px solid var(--line);padding:12px 18px}
+  .goal{font-size:14px;font-weight:600;letter-spacing:.01em}
+  .back{color:var(--dim);text-decoration:none;font-size:11px;letter-spacing:.06em;
+    text-transform:uppercase;display:inline-block;margin-bottom:6px}
+  .back:hover{color:var(--ink)}
+  .meta{color:var(--dim);margin-top:4px;display:flex;gap:16px;flex-wrap:wrap;align-items:center}
+  .pill{padding:2px 9px;border-radius:999px;font-size:11px;font-weight:700;letter-spacing:.06em;
+    text-transform:uppercase;border:1px solid}
+  main{display:flex;min-height:calc(100vh - 62px)}
+  #gutter{width:188px;flex:none;border-right:1px solid var(--line);padding:22px 12px;
+    color:var(--dim);font-size:11px}
+  #gutter .depth{height:138px;display:flex;flex-direction:column;justify-content:flex-start;gap:3px}
+  #gutter .depth b{color:var(--ink);font-size:11px;letter-spacing:.04em}
+  #stage{flex:1;overflow:auto;padding:22px 18px 60px}
+  #panel{width:400px;flex:none;border-left:1px solid var(--line);background:var(--panel);
+    padding:18px;overflow:auto;max-height:calc(100vh - 62px);position:sticky;top:62px}
+  #panel h2{font-size:13px;margin:0 0 2px}
+  #panel .sub{color:var(--dim);margin-bottom:14px}
+  #panel section{border-top:1px solid var(--line);padding:12px 0}
+  #panel h3{font-size:10px;letter-spacing:.12em;text-transform:uppercase;color:var(--dim);
+    margin:0 0 7px}
+  /* ---- tree ---- */
+  .sub{display:flex;gap:26px;justify-content:center;align-items:flex-start}
+  .wrap{display:flex;flex-direction:column;align-items:center;position:relative}
+  .kids{display:flex;gap:22px;align-items:flex-start;position:relative;padding-top:26px}
+  .kids::before{content:"";position:absolute;top:0;left:50%;width:2px;height:26px;
+    background:var(--line);transform:translateX(-1px)}
+  .wrap.has-parent::before{content:"";position:absolute;top:-26px;left:50%;width:2px;height:26px;
+    background:var(--line);transform:translateX(-1px)}
+  .wrap.edge-lit::before,.wrap.edge-lit .kids::before{background:var(--done);
+    box-shadow:0 0 7px #2fbf7199;animation:rise .9s ease-out}
+  @keyframes rise{from{background:var(--line);box-shadow:none}to{background:var(--done)}}
+  .card{width:252px;background:var(--panel);border:1px solid var(--line);border-left:3px solid var(--pending);
+    border-radius:7px;padding:9px 11px;cursor:pointer;transition:border-color .15s,transform .1s}
+  .card:hover{transform:translateY(-1px)}
+  .card.sel{border-color:#4b8bf4;box-shadow:0 0 0 1px #4b8bf4}
+  .card .id{font-weight:700;letter-spacing:.03em}
+  .card .st{float:right;font-size:10px;letter-spacing:.08em;text-transform:uppercase;font-weight:700}
+  .card .g{color:var(--dim);margin:5px 0;max-height:34px;overflow:hidden}
+  .card .model{color:#6f7787;font-size:11px}
+  .card .row{display:flex;gap:7px;align-items:center;margin-top:6px;flex-wrap:wrap;font-size:11px}
+  .chip{border:1px solid var(--line);border-radius:4px;padding:1px 6px;color:var(--dim)}
+  .chip.bad{border-color:var(--failed);color:#ff9ea1}
+  .chip.good{border-color:var(--done);color:#8be0ab}
+  .chip.warn{border-color:var(--needs_human);color:#ffbd8a}
+  .chip.verif{border-color:#30b6c4;color:#8adbe4}
+  .ev{color:#6f7787;font-size:11px;margin-top:5px;white-space:nowrap;overflow:hidden;
+    text-overflow:ellipsis}
+  .check{display:flex;gap:7px;margin-bottom:8px;align-items:flex-start}
+  .check .mk{flex:none;width:13px;font-weight:700}
+  .check code{display:block;color:var(--dim);font-size:11px;word-break:break-all;margin-top:2px}
+  .mv{color:var(--done)} .nmv{color:var(--needs_human)}
+  .finding{border-left:2px solid var(--needs_human);padding-left:8px;margin-bottom:7px;color:#ffd0ab}
+  .flag{border-left:2px solid var(--failed);padding-left:8px;margin-bottom:7px;color:#ff9ea1;
+    font-size:11px;word-break:break-word}
+  .asm{color:var(--dim);margin-bottom:4px}
+  pre{white-space:pre-wrap;word-break:break-word;margin:0;font-size:11px;color:var(--dim)}
+  .empty{color:var(--dim);padding:40px;text-align:center}
+  a{color:#6fa8ff}
+</style>
+
+<header>
+  <a href="./" class="back">← all runs</a>
+  <div class="goal" id="goal">waiting for a run…</div>
+  <div class="meta">
+    <span id="verdict" class="pill" style="border-color:var(--pending);color:var(--pending)">idle</span>
+    <span id="spend">—</span><span id="checks">—</span><span id="fams">—</span>
+    <span id="clock">—</span><span id="runid" style="margin-left:auto"></span>
+  </div>
+</header>
+<main>
+  <div id="gutter"></div>
+  <div id="stage"><div class="empty">no tree.json yet — start a run with <code>uv run done run "…"</code></div></div>
+  <div id="panel"><div class="sub">click a node</div></div>
+</main>
+
+<script>
+const qs = new URLSearchParams(location.search);
+let RUN = qs.get("run") || null;
+let selected = qs.get("node") || "root";
+let lastRaw = "";
+let litEdges = new Set();
+
+const $ = id => document.getElementById(id);
+const esc = s => String(s ?? "").replace(/[&<>]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;"}[c]));
+
+// The cached manifest (written after every run, and by `done index`) is the source of
+// truth — scraping the web server's directory listing only worked under python -m
+// http.server and told us nothing about what a run contained.
+async function findRun(){
+  if (RUN) return RUN;
+  try{
+    const idx = await (await fetch("../runs/index.json", {cache:"no-store"})).json();
+    const live = (idx.runs || []).filter(r => !r.preserved);
+    RUN = (live[0] || (idx.runs || [])[0] || {}).id || null;
+  }catch(e){}
+  return RUN;
+}
+
+async function poll(){
+  const run = await findRun();
+  if (run){
+    try{
+      const raw = await (await fetch(`../runs/${run}/tree.json`, {cache:"no-store"})).text();
+      if (raw !== lastRaw){ lastRaw = raw; render(JSON.parse(raw), run); }
+    }catch(e){}
+  }
+  setTimeout(poll, 500);
+}
+
+function render(data, run){
+  const nodes = data.nodes || {};
+  const root = nodes.root;
+  $("goal").textContent = data.root_goal || "";
+  $("runid").textContent = run;
+  $("clock").textContent = `${(data.elapsed_s ?? 0).toFixed(0)}s`;
+
+  const meta = data.meta || {};
+  const used = meta.tokens_used ?? Object.values(nodes).reduce((a,n)=>a+(n.tokens_used||0),0);
+  $("spend").textContent = `${used.toLocaleString()} / ${(data.budget_total||0).toLocaleString()} tok`
+    + (meta.cost_usd != null ? `  ·  $${Number(meta.cost_usd).toFixed(4)}` : "");
+
+  const all = Object.values(nodes).flatMap(n => n.dod || []);
+  $("checks").textContent = `checks ${all.filter(c=>c.passed).length}/${all.length}`;
+  const vmodels = new Set(Object.values(nodes).filter(n=>n.verification)
+    .map(n=>n.verification.verifier_model));
+  const fams = new Set([...vmodels].map(m => m.split("/")[0]));
+  $("fams").textContent = `${vmodels.size} verifier${vmodels.size===1?"":"s"} / ${fams.size} famil${fams.size===1?"y":"ies"}`;
+
+  const st = root ? root.status : "pending";
+  const vp = $("verdict");
+  vp.textContent = {done:"DONE",needs_human:"NEEDS HUMAN",stopped:"STOPPED",failed:"FAILED"}[st] || st;
+  vp.style.borderColor = vp.style.color = `var(--${st})`;
+
+  // depth gutter
+  const tiers = meta.tiers || {};
+  $("gutter").innerHTML = Object.keys(tiers).sort().map(d =>
+    `<div class="depth"><b>depth ${d}${d==="2"?"+":""}</b><span>${esc(tiers[d].split("/").pop())}</span></div>`
+  ).join("") || "";
+
+  // tree
+  if (!root){ return; }
+  $("stage").innerHTML = "";
+  $("stage").appendChild(buildWrap(root, nodes, false));
+  paintPanel(nodes[selected] || root, nodes);
+}
+
+function buildWrap(node, nodes, hasParent){
+  const wrap = document.createElement("div");
+  wrap.className = "wrap" + (hasParent ? " has-parent" : "");
+  if (node.status === "done"){
+    wrap.classList.add("edge-lit");
+    litEdges.add(node.id);
+  }
+  wrap.appendChild(buildCard(node, nodes));
+  const kids = (node.children || []).map(id => nodes[id]).filter(Boolean);
+  if (kids.length){
+    const row = document.createElement("div");
+    row.className = "kids";
+    kids.forEach(k => row.appendChild(buildWrap(k, nodes, true)));
+    wrap.appendChild(row);
+  }
+  return wrap;
+}
+
+function buildCard(node, nodes){
+  const el = document.createElement("div");
+  el.className = "card" + (node.id === selected ? " sel" : "");
+  el.style.borderLeftColor = `var(--${node.status})`;
+  const dod = node.dod || [];
+  const passed = dod.filter(c => c.passed).length;
+  const v = node.verification;
+  const chips = [];
+  if (dod.length) chips.push(`<span class="chip ${passed===dod.length?'good':'bad'}">checks ${passed}/${dod.length}</span>`);
+  if (v) chips.push(`<span class="chip verif">⇄ ${esc(v.verifier_model.split("/").pop())}</span>`);
+  if (v && v.verdict !== "DONE") chips.push(`<span class="chip bad">${esc(v.verdict)}</span>`);
+  (node.flags||[]).forEach(f => chips.push(`<span class="chip ${f.kind==='BUDGET'?'warn':'bad'}">⚑ ${f.kind}</span>`));
+  if (node.dod_rewrites) chips.push(`<span class="chip warn">checks rewritten</span>`);
+  if (node.attempts) chips.push(`<span class="chip">attempt ${node.attempts+1}</span>`);
+  el.innerHTML = `
+    <div><span class="id">${esc(node.id)}</span>
+      <span class="st" style="color:var(--${node.status})">${esc(node.status)}</span></div>
+    <div class="g">${esc(node.goal)}</div>
+    <div class="model">${esc((node.model||"").split("/").pop())}${node.decision?` · ${node.decision}`:""}${(node.children||[]).length && node.subtree_tokens?` · ${node.subtree_tokens.toLocaleString()}tok↓`:node.tokens_used?` · ${node.tokens_used.toLocaleString()}tok`:""}</div>
+    <div class="row">${chips.join("")}</div>
+    ${(node.events||[]).length?`<div class="ev">↳ ${esc(node.events.at(-1))}</div>`:""}`;
+  el.onclick = () => { selected = node.id; render(JSON.parse(lastRaw), RUN); };
+  return el;
+}
+
+function paintPanel(node, nodes){
+  const v = node.verification;
+  const sec = (title, body) => body ? `<section><h3>${title}</h3>${body}</section>` : "";
+  const checks = (node.dod||[]).map(c => `
+    <div class="check">
+      <span class="mk" style="color:var(--${c.passed===true?'done':c.passed===false?'failed':'pending'})">
+        ${c.passed===true?"✓":c.passed===false?"✗":"·"}</span>
+      <div>${esc(c.description)}
+        <code>${esc(c.kind)}${c.negative?" · NEGATIVE":""}${c.command?": "+esc(c.command):""}${c.path?": "+esc(c.path):""}</code>
+        <code class="${c.meta_verified?'mv':'nmv'}">meta_verified ${c.meta_verified?"✓":"✗"}${c.meta_reason?" — "+esc(c.meta_reason):""}</code>
+        ${c.output?`<code>${esc(String(c.output).slice(0,300))}</code>`:""}
+      </div>
+    </div>`).join("");
+  $("panel").innerHTML = `
+    <h2>${esc(node.id)} · <span style="color:var(--${node.status})">${esc(node.status)}</span></h2>
+    <div class="sub">${esc(node.model)} · depth ${node.depth} · budget ${(node.budget_tokens||0).toLocaleString()} tok</div>
+    ${sec("goal", `<pre>${esc(node.goal)}</pre>`)}
+    ${sec("assumptions it made", (node.assumptions||[]).map(a=>`<div class="asm">• ${esc(a)}</div>`).join(""))}
+    ${sec(`definition of done (${(node.dod||[]).filter(c=>c.passed).length}/${(node.dod||[]).length})`, checks)}
+    ${sec("verification", v?`<div>verdict <b style="color:var(--${v.verdict==='DONE'?'done':'failed'})">${esc(v.verdict)}</b>
+        by <b>${esc(v.verifier_model)}</b><br><span style="color:var(--dim)">family
+        ${esc(v.verifier_model.split("/")[0])} ≠ ${esc((node.model||"").split("/")[0])} — independence enforced</span></div>
+      <pre style="margin-top:7px">${esc(v.reasoning)}</pre>`:"")}
+    ${sec("independent findings", (v?.independent_findings||[]).map(f=>`<div class="finding">${esc(f)}</div>`).join(""))}
+    ${sec("monitor flags", (node.flags||[]).map(f=>`<div class="flag">⚑ ${esc(f.kind)} @step ${f.step} — ${esc(f.evidence)}</div>`).join(""))}
+    ${sec("report to its parent", node.final_report?`<pre>${esc(node.final_report)}</pre>`:"")}
+    ${sec("event log", (node.events||[]).map(e=>`<pre>· ${esc(e)}</pre>`).join(""))}`;
+}
+poll();
+</script>
