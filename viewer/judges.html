@@ -1,0 +1,293 @@
+<!doctype html>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>done — for judges</title>
+<style>
+  :root{
+    --bg:#F4F4F0; --ink:#000; --panel:#fff;
+    --pink:#FF90E8; --yellow:#FFC900; --teal:#23A094; --mint:#90DFD3;
+    --lilac:#DBD5FC; --sky:#B3C1FF; --red:#DC341E; --grey:#E8E8E2;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--ink);
+    font:16px/1.6 -apple-system,BlinkMacSystemFont,"Helvetica Neue",Arial,sans-serif;
+    -webkit-font-smoothing:antialiased}
+  code{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:.86em;
+    background:#fff;border:1px solid var(--ink);border-radius:3px;padding:1px 5px}
+  pre{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:13px;line-height:1.5;
+    background:#fff;border:1px solid var(--ink);border-radius:5px;padding:14px 16px;
+    box-shadow:4px 4px 0 var(--ink);overflow-x:auto;margin:16px 0}
+  header{background:var(--pink);border-bottom:1px solid var(--ink);padding:24px 30px 22px}
+  nav{display:flex;gap:9px;margin-bottom:14px;flex-wrap:wrap}
+  nav a{text-decoration:none;color:var(--ink);background:#fff;border:1px solid var(--ink);
+    border-radius:999px;padding:4px 14px;font-size:13px;font-weight:700;
+    box-shadow:2px 2px 0 var(--ink)}
+  nav a:hover{transform:translate(-1px,-1px);box-shadow:3px 3px 0 var(--ink)}
+  nav a.on{background:var(--ink);color:#fff}
+  h1{font-size:33px;margin:0;letter-spacing:-.03em;font-weight:800;line-height:1.1}
+  .lede{margin:12px 0 0;max-width:800px;font-size:18px;font-weight:600}
+  main{padding:32px 30px 90px;max-width:1000px}
+  section{margin-bottom:46px}
+  h2{font-size:23px;letter-spacing:-.02em;font-weight:800;margin:0 0 6px;
+     border-bottom:3px solid var(--ink);padding-bottom:9px}
+  h3{font-size:18px;font-weight:800;margin:24px 0 4px}
+  .q{background:var(--yellow);border:1px solid var(--ink);border-radius:5px;
+     box-shadow:4px 4px 0 var(--ink);padding:14px 17px;margin:22px 0 0;font-weight:800;
+     font-size:17px;max-width:860px}
+  .a{max-width:860px;margin:14px 0}
+  p{margin:12px 0;max-width:860px}
+  table{border-collapse:collapse;width:100%;margin:16px 0;background:#fff;
+    border:1px solid var(--ink);box-shadow:4px 4px 0 var(--ink)}
+  th,td{border-bottom:1px solid var(--ink);padding:9px 13px;text-align:left;font-size:14px;
+    vertical-align:top}
+  th{background:var(--grey);font-weight:800}
+  tr:last-child td{border-bottom:none}
+  .big{display:grid;gap:14px;grid-template-columns:repeat(auto-fit,minmax(270px,1fr));
+    margin:18px 0}
+  .stat{background:#fff;border:1px solid var(--ink);border-radius:5px;padding:14px;
+    box-shadow:4px 4px 0 var(--ink)}
+  .stat b{display:block;font-size:27px;font-weight:800;letter-spacing:-.02em;line-height:1.1}
+  .stat span{font-size:13px;font-weight:600}
+  .stat.hi{background:var(--mint)}
+  ul,ol{max-width:860px} li{margin:7px 0}
+  .kill{background:var(--teal);color:#fff;border:1px solid var(--ink);border-radius:5px;
+    box-shadow:4px 4px 0 var(--ink);padding:16px 18px;margin:18px 0;max-width:860px;
+    font-weight:600;font-size:17px}
+  .warn{background:var(--lilac);border:1px solid var(--ink);border-radius:5px;
+    box-shadow:4px 4px 0 var(--ink);padding:15px 17px;margin:18px 0;max-width:860px}
+  .tag{display:inline-block;border:1px solid var(--ink);border-radius:999px;padding:1px 10px;
+    font-size:12px;font-weight:700;margin-right:5px}
+  .t-done{background:var(--teal);color:#fff} .t-pink{background:var(--pink)}
+  .t-bad{background:var(--red);color:#fff} .t-warn{background:var(--yellow)}
+  footer{border-top:1px solid var(--ink);padding:22px 30px 60px;font-size:14px}
+</style>
+
+<header>
+  <nav>
+    <a href="./">all runs</a>
+    <a href="about.html">how it works</a>
+    <a href="judges.html" class="on">for judges</a>
+  </nav>
+  <h1>done — the recursive verifier court</h1>
+  <p class="lede">Most agents say "done" whether or not it's true. This one is not allowed to say
+  it until a model family that contributed nothing to the work has re-run every check itself.</p>
+</header>
+
+<main>
+
+<section>
+  <h2>The 20-second version</h2>
+  <p>You give it one sentence. It writes the code. The whole project is about the sentence it
+  says at the <i>end</i>:</p>
+  <table>
+    <tr><th>Verdict</th><th>What it means</th></tr>
+    <tr><td><span class="tag t-done">DONE</span></td>
+        <td>Every check passed, and a model family that did none of the work re-ran them.</td></tr>
+    <tr><td><span class="tag t-bad">STOPPED</span></td>
+        <td>It doesn't work, and here is exactly which check failed and why.</td></tr>
+    <tr><td><span class="tag t-pink">NEEDS_HUMAN</span></td>
+        <td>It cannot finish without something only you know. Here is the one question.</td></tr>
+  </table>
+  <div class="kill">The deliverable is not code generation. It is a status you can act on
+  without re-reading the work — including when the status is "no".</div>
+</section>
+
+<section>
+  <h2>The objection, answered first</h2>
+
+  <div class="q">"Isn't this just LLM-as-a-judge?"</div>
+  <div class="a">
+    <p>It contains one, but <b>the judge does not decide.</b> A check passes because
+    <code>python3 -m notes add hi &amp;&amp; python3 -m notes list</code> exited 0. That is the
+    operating system, not an opinion.</p>
+    <p>And the hard rule: <b>a <code>DONE</code> verdict with any check failing is
+    deterministically overridden to <code>NOT_DONE</code></b>, with the override written into the
+    trace. The model cannot argue past ground truth.</p>
+    <p>The LLM writes the exam and flags suspicious questions. <b>The computer grades it.</b></p>
+  </div>
+
+  <div class="q">"Then isn't it just automated code review?"</div>
+  <div class="a">
+    <p>Code review means reading code and having opinions. This barely reads code — it
+    <b>runs</b> it. The verifier is handed artifacts, a directory listing, and read-only tools.
+    It is never shown the worker's transcript or its claims, so a confident explanation cannot
+    move the verdict.</p>
+    <table>
+      <tr><th></th><th>LLM-judge / code review</th><th>here</th></tr>
+      <tr><td>What is examined</td><td>code, read as text</td><td><b>artifacts, executed</b></td></tr>
+      <tr><td>What produces the verdict</td><td>model opinion</td><td><b>exit codes</b></td></tr>
+      <tr><td>Judge sees the author's story?</td><td>usually yes</td><td><b>never</b></td></tr>
+      <tr><td>Judge may be the same model?</td><td>usually yes</td>
+          <td><b>no — blocked against every model that contributed</b></td></tr>
+      <tr><td>Can a good explanation change the result?</td><td>yes</td><td><b>no</b></td></tr>
+    </table>
+  </div>
+
+  <div class="q">"So what is actually new here?"</div>
+  <div class="a">
+    <p>Two things, and neither is a judge.</p>
+    <p><b>1 · Falsification, using no model at all.</b> Before any work starts, every check is run
+    against an <b>empty workspace</b>. They must all fail. A check that <i>passes</i> on an empty
+    workspace is a fake check and proves nothing. A check that fails with a syntax error is a
+    broken check and could never pass. Both are rewritten before the worker begins.</p>
+    <p>Everyone asks <i>"is the work good?"</i>. Nobody asks <i>"is the test real?"</i> — and a
+    fake test is precisely how an agent passes while failing. This step is deterministic and
+    costs nothing unless something is wrong. It caught a real one on a live run:
+    <code>import notes.cli if hasattr(...) else None</code>, which is not valid Python, so the
+    work would have been failed for the check's own bug.</p>
+    <p><b>2 · Independence enforced against who actually answered.</b> Not "pick a different
+    model" in a config. Every model that produces work on a node is recorded in
+    <code>contributor_models</code>, and those families are disqualified from judging it — in the
+    choice, in its fallback chain, and at the final gate.</p>
+    <p>This closed a real hole in our own code: a Crusoe rate limit silently moved work to the
+    fallback model, and the verifier was still being chosen from the <i>configured</i> model — so
+    <code>openai</code> verified <code>openai</code>'s own work while the trace claimed
+    cross-family verification.</p>
+  </div>
+
+  <div class="q">"What here is standard, honestly?"</div>
+  <div class="a">
+    <p>We would rather say it than have you find it:</p>
+    <ul>
+      <li><b>Recursive decomposition</b> — standard plan-and-execute.</li>
+      <li><b>An LLM writing tests</b> — common.</li>
+      <li><b>A second model checking</b> — the cross-family idea is known; what is unusual is
+        that it is structurally enforced rather than politely requested in a prompt.</li>
+      <li><b>Meta-verification</b> ("would passing this check prove the goal?") — this <i>is</i> a
+        judge, and it is the softest component. It is also why a judge verdict can never stand
+        alone here: it is one input to a gate whose other inputs are exit codes.</li>
+    </ul>
+  </div>
+</section>
+
+<section>
+  <h2>Check it yourself in 30 seconds</h2>
+  <p>Every claim on this page is reproducible offline, with no API key and no network.</p>
+<pre>git clone https://github.com/Kush614/done &amp;&amp; cd done &amp;&amp; uv sync
+
+uv run pytest -q                                      <span style="opacity:.6"># 94 passed, ~15s</span>
+uv run done replay runs/demo-final/demo_02_refusal    <span style="opacity:.6"># the refusal, a real run</span>
+uv run done replay runs/demo-final/notes_cli_done     <span style="opacity:.6"># a verified completion</span></pre>
+  <p>Four complete runs ship in <code>runs/demo-final/</code> — the node tree, the full
+  append-only event log, and the files the agents actually produced. Nothing is mocked; these are
+  traces of real runs against Crusoe.</p>
+</section>
+
+<section>
+  <h2>Built during the hackathon · Oct 17, 2026</h2>
+  <p>Every file in the repository is new work written that day. No pre-existing project, and no
+  agent framework — no LangChain, no CrewAI, no LangGraph. The recursion, the budget algebra, the
+  sandbox, the monitor heuristics, the falsification step and the verifier protocol are all our
+  own code, in this repo, in 17 Python modules and 13 prompt files.</p>
+
+  <div class="big">
+    <div class="stat hi"><b>94</b><span>offline tests, ~15s</span></div>
+    <div class="stat"><b>22</b><span>commits, all today</span></div>
+    <div class="stat"><b>22</b><span>live runs against Crusoe</span></div>
+    <div class="stat"><b>$0.56</b><span>total API spend</span></div>
+    <div class="stat"><b>6</b><span>model families used</span></div>
+    <div class="stat hi"><b>12</b><span>bugs found by live runs</span></div>
+  </div>
+
+  <p>The 94 tests are not decoration. They cover the recursion invariants (a split node cannot be
+  done if a child failed; a same-family verdict is rejected; the check rewrite fires exactly
+  once), the sandbox jail (<code>../</code>, absolute paths, symlinked files <i>and</i>
+  directories, network blocked), the monitor's loop patterns, and a <b>full end-to-end run with
+  only the model calls faked</b> — real files written, real pytest executed, real verifier gate.</p>
+</section>
+
+<section>
+  <h2>The hard parts</h2>
+  <table>
+    <tr><th>Problem</th><th>What it took</th></tr>
+    <tr>
+      <td><b>Parallel agents sharing one workspace</b></td>
+      <td>Siblings run concurrently and cannot talk. One wrote <code>storage.py</code> flat,
+      another built a <code>notes/</code> package, a third's tests found neither. The root now
+      owns the file layout as a binding contract, and a declared prerequisite runs first, alone,
+      with its <i>real</i> directory listing handed to the siblings.</td>
+    </tr>
+    <tr>
+      <td><b>Budgets that are actually limits</b></td>
+      <td>Every call is charged to the node <i>and its whole ancestor chain</i>, and refused when
+      a subtree has spent its allocation. Before this, one branch consumed 211k of a 250k run
+      against its own 63k allocation and its three siblings received zero tokens.</td>
+    </tr>
+    <tr>
+      <td><b>Token accounting under concurrency</b></td>
+      <td><code>_current_node_id</code> was one shared attribute while siblings ran under
+      <code>asyncio.gather</code>, so every call was charged to whichever sibling ran last — one
+      node reported 13.7k against an actual 46k. Now a <code>ContextVar</code>, copied per task.
+      This was not cosmetic: the worker's spend ceiling is computed from these numbers.</td>
+    </tr>
+    <tr>
+      <td><b>Surviving a real provider</b></td>
+      <td>Crusoe rate-limits sustained request rate. A model that errors gets a <b>cooldown, never
+      a blacklist</b> — the original permanent blacklist removed the entire worker tier for a full
+      run after one burst of 429s (52 fallbacks, 102 of 108 calls answered by one model).</td>
+    </tr>
+    <tr>
+      <td><b>Knowing when to stop and ask</b></td>
+      <td>The planner must prefix an assumption only a person can settle with
+      <code>NEEDS HUMAN:</code>. A node holding one cannot reach <code>DONE</code> <b>even with
+      every check green</b>, and the question propagates to its parent. Running out of budget does
+      not answer the question either, so a node that stops with one open still reports
+      <code>NEEDS_HUMAN</code>.</td>
+    </tr>
+  </table>
+</section>
+
+<section>
+  <h2>Why Crusoe makes this possible</h2>
+  <p>One OpenAI-compatible key gives six model families across roughly a 20× price spread. That
+  spread is the entire economic argument: "a different family verifies every node" is affordable
+  only because the expensive model plans and the cheap models build and check.</p>
+  <table>
+    <tr><th>Role</th><th>Model</th><th>Why</th></tr>
+    <tr><td>Root planner</td><td><code>deepseek-ai/DeepSeek-V4-Pro</code></td>
+        <td>1–2 calls, never writes a file.</td></tr>
+    <tr><td><b>Every worker</b></td><td><code>nvidia/NVIDIA-Nemotron-3-Super-120B-A12B</code></td>
+        <td><b>Measured, not assumed.</b> Nemotron Nano at the leaves burned 23–39k tokens per
+        node and landed checks at 1/3, 1/5, 0/2. Super did the same work in 14k tokens and 3 tool
+        steps. <b>Every file in a demo run is written by Nemotron.</b></td></tr>
+    <tr><td>Drift judge</td><td><code>nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B</code></td>
+        <td>Scoring drift 0–10 is the job it is genuinely good at, and it is called only on a
+        cheap heuristic trigger.</td></tr>
+    <tr><td>Verifiers</td><td><code>gpt-oss-120b</code> · <code>gemma-4-31b-it</code> ·
+        <code>GLM-5.3</code></td>
+        <td>Whichever family contributed nothing to that node.</td></tr>
+  </table>
+  <p><code>done models</code> probes the live catalogue and writes the tiers and the cross-family
+  verifier map to <code>models.json</code>, so a model appearing or disappearing never needs a
+  code edit. That mattered — the live catalogue differs from the published docs: there is no
+  <code>meta-llama</code> on Crusoe at all (our configured fallback did not exist), the zai family
+  is spelled <code>zai-org</code>, and Nemotron carries an <code>NVIDIA-</code> prefix.</p>
+</section>
+
+<section>
+  <h2>What we would not claim</h2>
+  <div class="warn">
+    <p style="margin-top:0"><b>It is slow.</b> A four-artifact split takes 8–16 minutes against
+    this account's rate limits. Concurrency is not the limiter — four parallel requests return in
+    under a second. A four-artifact goal is a replay demo, not a live one.</p>
+    <p><b>It does not always finish.</b> The hero goal reaches a fully green tree sometimes, and
+    otherwise stops with an exact account of which checks failed. A stop is a <i>designed</i>
+    outcome, not a crash — but it is not a green tree, and we would rather say so.</p>
+    <p><b>Verification costs about 40% of a run.</b> That is the price of the claim, and the whole
+    reason a cheap tier does the building.</p>
+    <p style="margin-bottom:0"><b>Small units only.</b> No network and no credentials inside the
+    sandbox, one-liner goals, depth capped at 3. The bet is that trustworthy small units are what
+    you need before anything bigger can be stacked on top.</p>
+  </div>
+  <div class="kill">The point was never an agent that always succeeds. It is an agent whose
+  report you can act on without re-reading the work.</div>
+</section>
+
+</main>
+
+<footer>
+  Repo: <a href="https://github.com/Kush614/done">github.com/Kush614/done</a> ·
+  Design detail with diagrams: <a href="about.html">how it works</a> ·
+  Every run: <a href="./">all runs</a> ·
+  Full judgment log with the evidence behind each fix: <code>DECISIONS.md</code>
+</footer>
