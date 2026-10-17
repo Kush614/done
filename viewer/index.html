@@ -17,7 +17,13 @@
     font:15px/1.5 -apple-system,BlinkMacSystemFont,"Helvetica Neue",Arial,sans-serif;
     -webkit-font-smoothing:antialiased}
   code,.mono{font-family:ui-monospace,SFMono-Regular,Menlo,monospace}
-  header{border-bottom:1px solid var(--ink);padding:26px 30px 20px;background:var(--pink)}
+  header{border-bottom:1px solid var(--ink);padding:22px 30px 20px;background:var(--pink)}
+  nav{display:flex;gap:9px;margin-bottom:14px;flex-wrap:wrap}
+  nav a{text-decoration:none;color:var(--ink);background:#fff;border:1px solid var(--ink);
+    border-radius:999px;padding:4px 14px;font-size:13px;font-weight:700;
+    box-shadow:2px 2px 0 var(--ink)}
+  nav a:hover{transform:translate(-1px,-1px);box-shadow:3px 3px 0 var(--ink)}
+  nav a.on{background:var(--ink);color:#fff}
   h1{font-size:26px;margin:0;letter-spacing:-.02em;font-weight:800}
   h1 span{font-weight:500;font-size:17px;letter-spacing:-.01em}
   .totals{display:flex;gap:10px;flex-wrap:wrap;margin-top:16px;font-size:13px}
@@ -67,6 +73,7 @@
 </style>
 
 <header>
+  <nav><a href="./" class="on">all runs</a><a href="about.html">how it works</a></nav>
   <h1>done <span>— the recursive verifier court · every run, cached</span></h1>
   <div class="totals" id="totals"></div>
   <div class="filters" id="filters"></div>

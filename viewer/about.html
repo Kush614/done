@@ -1,0 +1,746 @@
+<!doctype html>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>done — how it works</title>
+<style>
+  :root{
+    --bg:#F4F4F0; --ink:#000; --panel:#fff;
+    --pink:#FF90E8; --yellow:#FFC900; --teal:#23A094; --mint:#90DFD3;
+    --lilac:#DBD5FC; --sky:#B3C1FF; --red:#DC341E; --grey:#E8E8E2;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--ink);
+    font:16px/1.62 -apple-system,BlinkMacSystemFont,"Helvetica Neue",Arial,sans-serif;
+    -webkit-font-smoothing:antialiased}
+  code,.mono{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:.88em}
+  code{background:#fff;border:1px solid var(--ink);border-radius:3px;padding:1px 5px}
+  header{background:var(--pink);border-bottom:1px solid var(--ink);padding:26px 30px 22px}
+  nav{display:flex;gap:9px;margin-bottom:14px;flex-wrap:wrap}
+  nav a{text-decoration:none;color:var(--ink);background:#fff;border:1px solid var(--ink);
+    border-radius:999px;padding:4px 14px;font-size:13px;font-weight:700;
+    box-shadow:2px 2px 0 var(--ink)}
+  nav a:hover{transform:translate(-1px,-1px);box-shadow:3px 3px 0 var(--ink)}
+  nav a.on{background:var(--ink);color:#fff}
+  h1{font-size:34px;margin:0;letter-spacing:-.03em;font-weight:800;line-height:1.1}
+  .lede{margin:12px 0 0;max-width:760px;font-size:17px;font-weight:500}
+  main{padding:34px 30px 90px;max-width:1040px}
+  section{margin-bottom:52px}
+  h2{font-size:24px;letter-spacing:-.02em;font-weight:800;margin:0 0 4px;
+     border-bottom:3px solid var(--ink);padding-bottom:9px}
+  h2 .n{background:var(--yellow);border:1px solid var(--ink);border-radius:999px;
+    padding:2px 12px;font-size:15px;margin-right:9px;vertical-align:middle}
+  h3{font-size:17px;font-weight:800;margin:26px 0 6px}
+  p{margin:12px 0;max-width:820px}
+  .fig{background:var(--panel);border:1px solid var(--ink);border-radius:5px;
+    box-shadow:5px 5px 0 var(--ink);padding:20px;margin:22px 0}
+  .fig svg{width:100%;height:auto;display:block}
+  .cap{font-size:14px;font-weight:600;margin-top:14px;padding-top:12px;
+    border-top:1px solid var(--ink)}
+  .grid{display:grid;gap:16px;grid-template-columns:repeat(auto-fit,minmax(250px,1fr));margin:18px 0}
+  .box{background:#fff;border:1px solid var(--ink);border-radius:5px;padding:15px;
+    box-shadow:4px 4px 0 var(--ink)}
+  .box h4{margin:0 0 7px;font-size:15px;font-weight:800}
+  .box p{margin:0;font-size:14px}
+  .tag{display:inline-block;border:1px solid var(--ink);border-radius:999px;padding:1px 10px;
+    font-size:12px;font-weight:700;margin-right:5px}
+  .t-done{background:var(--teal);color:#fff} .t-bad{background:var(--red);color:#fff}
+  .t-warn{background:var(--yellow)} .t-pink{background:var(--pink)}
+  .t-sky{background:var(--sky)} .t-lilac{background:var(--lilac)}
+  table{border-collapse:collapse;width:100%;margin:18px 0;background:#fff;
+    border:1px solid var(--ink);box-shadow:4px 4px 0 var(--ink)}
+  th,td{border-bottom:1px solid var(--ink);padding:9px 13px;text-align:left;font-size:14px;
+    vertical-align:top}
+  th{background:var(--grey);font-weight:800}
+  tr:last-child td{border-bottom:none}
+  .lie{background:var(--yellow);border:1px solid var(--ink);border-radius:5px;padding:16px;
+    box-shadow:4px 4px 0 var(--ink);margin:18px 0;max-width:820px}
+  .lie b{font-weight:800}
+  blockquote{margin:16px 0;padding:13px 17px;background:var(--mint);
+    border:1px solid var(--ink);border-radius:5px;box-shadow:4px 4px 0 var(--ink);
+    font-weight:600;max-width:820px}
+  ol,ul{max-width:820px} li{margin:7px 0}
+  footer{border-top:1px solid var(--ink);padding:24px 30px 60px;font-size:14px}
+</style>
+
+<header>
+  <nav>
+    <a href="./">← all runs</a>
+    <a href="about.html" class="on">how it works</a>
+  </nav>
+  <h1>done — the recursive verifier court</h1>
+  <p class="lede">An agent gets a one-line goal and a token budget. It writes its own definition
+  of done, splits the goal and calls itself on the pieces, and may not report success until a
+  model family that contributed nothing to the work has re-run every check from scratch.</p>
+</header>
+
+<main>
+
+<!-- ───────────────────────────────── 1 ───────────────────────────────── -->
+<section>
+  <h2><span class="n">1</span>The problem</h2>
+  <p>Agents fill the holes in a vague goal with their own assumptions, and then report success
+  with complete confidence. The assumptions are usually reasonable. The reporting is the problem:
+  nothing distinguishes "I did it" from "I did something adjacent and the test I wrote for myself
+  passed".</p>
+
+  <div class="lie">
+    <b>A real example from this project.</b> Asked to "delete files in <code>/data</code> older
+    than 30 days and email a report to the admin", an early version wrote
+    <code># Configuration - user must set these</code> at the top of the script, passed every
+    check it had written, and reported <span class="tag t-done">DONE</span>.<br><br>
+    The checks passed because they tested <i>the code it wrote</i> — not the thing it could not
+    know, which is the SMTP server. Making an unknown configurable and calling it finished is the
+    exact failure this system exists to prevent.
+  </div>
+
+  <p>So the design question is not "how do we make the agent better". It is: <b>what has to be
+  true before a claim of done is worth anything?</b> This project's answer is six mechanisms,
+  each of which exists because a live run broke without it.</p>
+</section>
+
+<!-- ───────────────────────────────── 2 ───────────────────────────────── -->
+<section>
+  <h2><span class="n">2</span>How a goal becomes a tree</h2>
+  <p><code>solve(node)</code> either does the work or splits the goal and calls itself on each
+  piece, with a smaller enforced budget and a model chosen for the job. The root plans and writes
+  nothing; the leaves do all the work.</p>
+
+  <div class="fig">
+    <svg viewBox="-118 0 1098 470" role="img" aria-label="The recursion: a root node splits into four
+      sub-goals, the prerequisite running first, each verified by a different model family">
+      <defs>
+        <marker id="a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7"
+                orient="auto-start-reverse">
+          <path d="M0,0 L10,5 L0,10 z" fill="#000"/>
+        </marker>
+      </defs>
+      <style>
+        .bx{stroke:#000;stroke-width:2}
+        .sh{fill:#000}
+        .t{font:600 13px -apple-system,Helvetica,Arial,sans-serif}
+        .tb{font:800 14px -apple-system,Helvetica,Arial,sans-serif}
+        .tm{font:11px ui-monospace,Menlo,monospace}
+        .ts{font:600 11px -apple-system,Helvetica,Arial,sans-serif}
+        .ln{stroke:#000;stroke-width:2;fill:none}
+      </style>
+
+      <!-- depth labels -->
+      <text class="ts" x="-114" y="46">depth 0</text>
+      <text class="tm" x="-114" y="62">DeepSeek-V4-Pro</text>
+      <text class="ts" x="-114" y="236">depth 1</text>
+      <text class="tm" x="-114" y="252">Nemotron-Super</text>
+      <text class="ts" x="-114" y="356">verifier</text>
+      <text class="tm" x="-114" y="372">other family</text>
+
+      <!-- root -->
+      <rect class="sh" x="364" y="24" width="300" height="78" rx="5"/>
+      <rect class="bx" x="360" y="20" width="300" height="78" rx="5" fill="#DBD5FC"/>
+      <text class="tb" x="376" y="44">root — plans, writes nothing</text>
+      <text class="t" x="376" y="64">1. declares its assumptions out loud</text>
+      <text class="t" x="376" y="82">2. owns the file layout every child must use</text>
+
+      <!-- trunk + rail -->
+      <path class="ln" d="M510,98 L510,130"/>
+      <path class="ln" d="M130,130 L870,130"/>
+      <path class="ln" d="M130,130 L130,168" marker-end="url(#a)"/>
+      <path class="ln" d="M377,130 L377,168" marker-end="url(#a)"/>
+      <path class="ln" d="M624,130 L624,168" marker-end="url(#a)"/>
+      <path class="ln" d="M871,130 L871,168" marker-end="url(#a)"/>
+
+      <!-- children -->
+      <g>
+        <rect class="sh" x="44" y="172" width="176" height="104" rx="5"/>
+        <rect class="bx" x="40" y="168" width="176" height="104" rx="5" fill="#FFC900"/>
+        <text class="tb" x="54" y="190">root.1</text>
+        <rect class="bx" x="112" y="177" width="94" height="18" rx="9" fill="#fff"/>
+        <text class="ts" x="119" y="190">PREREQUISITE</text>
+        <text class="t" x="54" y="212">storage.py</text>
+        <text class="ts" x="54" y="230">runs FIRST, alone — its</text>
+        <text class="ts" x="54" y="246">REAL files go to the</text>
+        <text class="ts" x="54" y="262">siblings, not a description</text>
+      </g>
+      <g>
+        <rect class="sh" x="291" y="172" width="176" height="104" rx="5"/>
+        <rect class="bx" x="287" y="168" width="176" height="104" rx="5" fill="#fff"/>
+        <text class="tb" x="301" y="190">root.2</text>
+        <text class="t" x="301" y="212">cli.py</text>
+        <text class="ts" x="301" y="234">starts only after</text>
+        <text class="ts" x="301" y="250">root.1 exists, and is</text>
+        <text class="ts" x="301" y="266">handed its real listing</text>
+      </g>
+      <g>
+        <rect class="sh" x="538" y="172" width="176" height="104" rx="5"/>
+        <rect class="bx" x="534" y="168" width="176" height="104" rx="5" fill="#fff"/>
+        <text class="tb" x="548" y="190">root.3</text>
+        <text class="t" x="548" y="212">tests/test_notes.py</text>
+        <text class="ts" x="548" y="246">these three run</text>
+        <text class="ts" x="548" y="262">in parallel</text>
+      </g>
+      <g>
+        <rect class="sh" x="785" y="172" width="176" height="104" rx="5"/>
+        <rect class="bx" x="781" y="168" width="176" height="104" rx="5" fill="#fff"/>
+        <text class="tb" x="795" y="190">root.4</text>
+        <text class="t" x="795" y="212">README.md</text>
+      </g>
+
+      <!-- verifiers -->
+      <path class="ln" d="M128,272 L128,330" marker-end="url(#a)"/>
+      <path class="ln" d="M375,272 L375,330" marker-end="url(#a)"/>
+      <path class="ln" d="M622,272 L622,330" marker-end="url(#a)"/>
+      <path class="ln" d="M869,272 L869,330" marker-end="url(#a)"/>
+      <g>
+        <rect class="sh" x="44" y="338" width="176" height="52" rx="5"/>
+        <rect class="bx" x="40" y="334" width="176" height="52" rx="5" fill="#B3C1FF"/>
+        <text class="tb" x="54" y="356">gpt-oss-120b</text>
+        <text class="ts" x="54" y="374">openai ≠ nvidia</text>
+      </g>
+      <g>
+        <rect class="sh" x="291" y="338" width="176" height="52" rx="5"/>
+        <rect class="bx" x="287" y="334" width="176" height="52" rx="5" fill="#B3C1FF"/>
+        <text class="tb" x="301" y="356">gpt-oss-120b</text>
+        <text class="ts" x="301" y="374">openai ≠ nvidia</text>
+      </g>
+      <g>
+        <rect class="sh" x="538" y="338" width="176" height="52" rx="5"/>
+        <rect class="bx" x="534" y="334" width="176" height="52" rx="5" fill="#B3C1FF"/>
+        <text class="tb" x="548" y="356">gemma-4-31b-it</text>
+        <text class="ts" x="548" y="374">google ≠ nvidia</text>
+      </g>
+      <g>
+        <rect class="sh" x="785" y="338" width="176" height="52" rx="5"/>
+        <rect class="bx" x="781" y="334" width="176" height="52" rx="5" fill="#B3C1FF"/>
+        <text class="tb" x="795" y="356">gpt-oss-120b</text>
+        <text class="ts" x="795" y="374">openai ≠ nvidia</text>
+      </g>
+
+      <!-- green rises -->
+      <path d="M128,334 L128,276" stroke="#23A094" stroke-width="5" fill="none"/>
+      <text class="ts" x="140" y="306" fill="#23A094">verified → green rises</text>
+
+      <rect class="bx" x="40" y="414" width="921" height="40" rx="5" fill="#90DFD3"/>
+      <text class="t" x="56" y="440">The parent is done only when every child is done AND its own
+        integration checks — written after the fact, testing the seams — pass.</text>
+    </svg>
+    <div class="cap">The root spends 1–2 calls and never touches a file. A declared
+    prerequisite runs alone first, because siblings cannot talk to each other and a described
+    interface is not the same as a built one.</div>
+  </div>
+
+  <blockquote>Why this is genuinely recursive: <code>solve()</code> calls itself on sub-goals;
+  the verifier applies the same procedure to the <i>checks</i> ("is this check actually testing
+  the goal?"); and a failed decomposition re-enters the planner, which decomposes only what is
+  left.</blockquote>
+</section>
+
+<!-- ───────────────────────────────── 3 ───────────────────────────────── -->
+<section>
+  <h2><span class="n">3</span>The life of one node</h2>
+  <p>Every leaf goes through the same seven stages. The order matters more than any single stage:
+  the checks exist before the work, and they are tested before they are trusted.</p>
+
+  <div class="fig">
+    <svg viewBox="0 0 980 420" role="img" aria-label="A node's pipeline: plan, write checks,
+      falsify the checks, do the work under a monitor, meta-verify, re-run every check, and the
+      verdict gate">
+      <style>
+        .s{stroke:#000;stroke-width:2}
+        .n{font:800 13px -apple-system,Helvetica,Arial,sans-serif}
+        .d{font:600 11px -apple-system,Helvetica,Arial,sans-serif}
+        .m{font:10px ui-monospace,Menlo,monospace}
+        .l{stroke:#000;stroke-width:2;fill:none}
+      </style>
+      <defs>
+        <marker id="b" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7"
+                orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#000"/></marker>
+      </defs>
+
+      <!-- stage boxes -->
+      <g>
+        <rect class="s" x="8" y="34" width="128" height="76" rx="5" fill="#DBD5FC"/>
+        <text class="n" x="20" y="56">1 · PLAN</text>
+        <text class="d" x="20" y="76">EXECUTE or SPLIT</text>
+        <text class="d" x="20" y="92">+ declare every</text>
+        <text class="d" x="20" y="105">assumption</text>
+      </g>
+      <path class="l" d="M136,72 L160,72" marker-end="url(#b)"/>
+      <g>
+        <rect class="s" x="160" y="34" width="128" height="76" rx="5" fill="#fff"/>
+        <text class="n" x="172" y="56">2 · CHECKS</text>
+        <text class="d" x="172" y="76">3–5 runnable</text>
+        <text class="d" x="172" y="92">checks, written</text>
+        <text class="d" x="172" y="105">BEFORE the work</text>
+      </g>
+      <path class="l" d="M288,72 L312,72" marker-end="url(#b)"/>
+      <g>
+        <rect class="s" x="312" y="34" width="150" height="76" rx="5" fill="#FFC900"/>
+        <text class="n" x="324" y="56">3 · FALSIFY</text>
+        <text class="d" x="324" y="76">run them on an</text>
+        <text class="d" x="324" y="92">EMPTY workspace —</text>
+        <text class="d" x="324" y="105">all must fail</text>
+      </g>
+      <path class="l" d="M462,72 L486,72" marker-end="url(#b)"/>
+      <g>
+        <rect class="s" x="486" y="34" width="140" height="76" rx="5" fill="#fff"/>
+        <text class="n" x="498" y="56">4 · WORK</text>
+        <text class="d" x="498" y="76">tool loop, watched</text>
+        <text class="d" x="498" y="92">by the monitor,</text>
+        <text class="d" x="498" y="105">capped at 60% budget</text>
+      </g>
+      <path class="l" d="M626,72 L650,72" marker-end="url(#b)"/>
+      <g>
+        <rect class="s" x="650" y="34" width="150" height="76" rx="5" fill="#B3C1FF"/>
+        <text class="n" x="662" y="56">5 · META-VERIFY</text>
+        <text class="d" x="662" y="76">would passing this</text>
+        <text class="d" x="662" y="92">check actually prove</text>
+        <text class="d" x="662" y="105">the goal?</text>
+      </g>
+      <path class="l" d="M800,72 L824,72" marker-end="url(#b)"/>
+      <g>
+        <rect class="s" x="824" y="34" width="148" height="76" rx="5" fill="#B3C1FF"/>
+        <text class="n" x="836" y="56">6 · RE-RUN</text>
+        <text class="d" x="836" y="76">the verifier runs</text>
+        <text class="d" x="836" y="92">every check itself.</text>
+        <text class="d" x="836" y="105">Never trusts a report.</text>
+      </g>
+
+      <!-- down to gate -->
+      <path class="l" d="M898,110 L898,150 L490,150 L490,176" marker-end="url(#b)"/>
+
+      <!-- gate -->
+      <rect class="s" x="330" y="176" width="320" height="56" rx="5" fill="#000"/>
+      <text class="n" x="352" y="200" fill="#fff">7 · THE GATE</text>
+      <text class="d" x="352" y="220" fill="#fff">deterministic rules a model cannot argue past</text>
+
+      <!-- three outcomes -->
+      <path class="l" d="M400,232 L400,268 L170,268 L170,292" marker-end="url(#b)"/>
+      <path class="l" d="M490,232 L490,292" marker-end="url(#b)"/>
+      <path class="l" d="M580,232 L580,268 L810,268 L810,292" marker-end="url(#b)"/>
+
+      <g>
+        <rect class="s" x="40" y="292" width="260" height="98" rx="5" fill="#23A094"/>
+        <text class="n" x="56" y="314" fill="#fff">DONE</text>
+        <text class="d" x="56" y="334" fill="#fff">every check passed, a different</text>
+        <text class="d" x="56" y="350" fill="#fff">family signed off, and no open</text>
+        <text class="d" x="56" y="366" fill="#fff">question only a human can answer</text>
+      </g>
+      <g>
+        <rect class="s" x="320" y="292" width="260" height="98" rx="5" fill="#DC341E"/>
+        <text class="n" x="336" y="314" fill="#fff">NOT_DONE</text>
+        <text class="d" x="336" y="334" fill="#fff">a check failed → fix the CODE.</text>
+        <text class="d" x="336" y="350" fill="#fff">Retry once with the failing</text>
+        <text class="d" x="336" y="366" fill="#fff">checks and findings prepended.</text>
+      </g>
+      <g>
+        <rect class="s" x="600" y="292" width="340" height="98" rx="5" fill="#FFC900"/>
+        <text class="n" x="616" y="314">CHECKS_INADEQUATE</text>
+        <text class="d" x="616" y="334">every check passed but the SET is weak →</text>
+        <text class="d" x="616" y="350">rewrite the checks and re-verify the SAME</text>
+        <text class="d" x="616" y="366">artifacts. The work was never the complaint.</text>
+      </g>
+    </svg>
+    <div class="cap">Stage 3 is the unusual one, and it is free: no model is consulted unless
+    something is actually wrong.</div>
+  </div>
+
+  <h3>Stage 3, falsification, in detail</h3>
+  <p>Before the worker touches anything, every check is run against the <b>empty</b> workspace.
+  Every non-negative check must fail. Two things fall out:</p>
+  <div class="grid">
+    <div class="box">
+      <h4><span class="tag t-warn">tautology</span></h4>
+      <p>A check that <i>already passes</i> with nothing built proves nothing about the goal.
+      <code>command: true</code> is the obvious case; <code>test -d .</code> is the sneaky one.</p>
+    </div>
+    <div class="box">
+      <h4><span class="tag t-bad">malformed</span></h4>
+      <p>A check that fails with a <i>syntax or tooling</i> error can never pass, so the work
+      would be failed for the check's bug. A real one:
+      <code>import notes.cli if hasattr(...) else None</code> — not valid Python.</p>
+    </div>
+  </div>
+  <p>A failure because the work does not exist yet is <i>correct</i> and expected — those are left
+  alone. Only the two categories above trigger a rewrite, before any work starts.</p>
+</section>
+
+<!-- ───────────────────────────────── 4 ───────────────────────────────── -->
+<section>
+  <h2><span class="n">4</span>Independence — the part that is easy to fake</h2>
+  <p>"A different model checks it" is cheap to say. Three things make it real here.</p>
+
+  <div class="fig">
+    <svg viewBox="0 0 980 340" role="img" aria-label="Independence: the verifier is chosen from a
+      family that contributed no work, which closes the hole a rate-limit fallback opened">
+      <style>
+        .s{stroke:#000;stroke-width:2}
+        .n{font:800 13px -apple-system,Helvetica,Arial,sans-serif}
+        .d{font:600 12px -apple-system,Helvetica,Arial,sans-serif}
+        .m{font:11px ui-monospace,Menlo,monospace}
+        .l{stroke:#000;stroke-width:2;fill:none}
+      </style>
+      <defs>
+        <marker id="c" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7"
+                orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#000"/></marker>
+      </defs>
+
+      <text class="n" x="8" y="22">THE BUG WE SHIPPED FIRST</text>
+      <rect class="s" x="8" y="34" width="190" height="62" rx="5" fill="#fff"/>
+      <text class="d" x="22" y="56">node.model =</text>
+      <text class="m" x="22" y="76">nvidia/Nemotron</text>
+      <path class="l" d="M198,65 L238,65" marker-end="url(#c)"/>
+      <rect class="s" x="238" y="34" width="210" height="62" rx="5" fill="#DC341E"/>
+      <text class="d" x="252" y="56" fill="#fff">429 rate limit → work</text>
+      <text class="d" x="252" y="76" fill="#fff">silently falls back to openai</text>
+      <path class="l" d="M448,65 L488,65" marker-end="url(#c)"/>
+      <rect class="s" x="488" y="34" width="240" height="62" rx="5" fill="#fff"/>
+      <text class="d" x="502" y="56">verifier still chosen from the</text>
+      <text class="d" x="502" y="76">CONFIGURED model → openai</text>
+      <path class="l" d="M728,65 L768,65" marker-end="url(#c)"/>
+      <rect class="s" x="768" y="34" width="204" height="62" rx="5" fill="#DC341E"/>
+      <text class="n" x="782" y="58" fill="#fff">openai verified</text>
+      <text class="n" x="782" y="78" fill="#fff">openai's own work</text>
+
+      <rect class="s" x="8" y="110" width="964" height="30" rx="5" fill="#FFC900"/>
+      <text class="d" x="24" y="130">…while the trace still said "cross-family verification". The
+        claim was false and nothing in the system noticed.</text>
+
+      <text class="n" x="8" y="178">THE FIX</text>
+      <rect class="s" x="8" y="190" width="300" height="80" rx="5" fill="#DBD5FC"/>
+      <text class="d" x="22" y="212">every model that produces work</text>
+      <text class="d" x="22" y="230">is recorded on the node:</text>
+      <text class="m" x="22" y="252">contributor_models = [nvidia/…, openai/…]</text>
+
+      <path class="l" d="M308,230 L348,230" marker-end="url(#c)"/>
+      <rect class="s" x="348" y="190" width="300" height="80" rx="5" fill="#fff"/>
+      <text class="d" x="362" y="212">those families are disqualified</text>
+      <text class="d" x="362" y="230">from judging — in the choice, in</text>
+      <text class="d" x="362" y="248">its fallback chain, and at the gate</text>
+
+      <path class="l" d="M648,230 L688,230" marker-end="url(#c)"/>
+      <rect class="s" x="688" y="190" width="284" height="80" rx="5" fill="#23A094"/>
+      <text class="n" x="702" y="216" fill="#fff">verdict comes from google</text>
+      <text class="d" x="702" y="238" fill="#fff">a family that touched nothing.</text>
+      <text class="d" x="702" y="256" fill="#fff">Otherwise: forced NOT_DONE.</text>
+
+      <rect class="s" x="8" y="288" width="964" height="42" rx="5" fill="#90DFD3"/>
+      <text class="d" x="24" y="305">The verifier is also never shown the worker's transcript or
+        its claims — only the artifacts, a directory listing, and read-only tools.</text>
+      <text class="d" x="24" y="323">It re-runs every check itself. A reported pass is not
+        evidence.</text>
+    </svg>
+    <div class="cap">Independence is judged against who <i>actually answered</i>, not who was
+    configured to. This was a live bug, found by reading a trace.</div>
+  </div>
+</section>
+
+<!-- ───────────────────────────────── 5 ───────────────────────────────── -->
+<section>
+  <h2><span class="n">5</span>What stops infinite recursion</h2>
+  <p>Five independent brakes. Any one alone terminates the tree, so no single bug can run away
+  with your budget.</p>
+
+  <div class="fig">
+    <svg viewBox="0 0 980 300" role="img" aria-label="Five independent brakes on recursion: depth
+      cap, hierarchical budget, attempt cap, the monitor, and a deterministic anti-split rule">
+      <style>
+        .s{stroke:#000;stroke-width:2}
+        .n{font:800 14px -apple-system,Helvetica,Arial,sans-serif}
+        .d{font:600 12px -apple-system,Helvetica,Arial,sans-serif}
+        .m{font:11px ui-monospace,Menlo,monospace}
+      </style>
+      <g>
+        <rect class="s" x="8" y="10" width="186" height="140" rx="5" fill="#FFC900"/>
+        <text class="n" x="22" y="34">1 · DEPTH</text>
+        <text class="m" x="22" y="56">MAX_DEPTH = 3</text>
+        <text class="d" x="22" y="82">At the cap a node</text>
+        <text class="d" x="22" y="100">may not split. It</text>
+        <text class="d" x="22" y="118">must do the work</text>
+        <text class="d" x="22" y="136">itself.</text>
+      </g>
+      <g>
+        <rect class="s" x="206" y="10" width="186" height="140" rx="5" fill="#FF90E8"/>
+        <text class="n" x="220" y="34">2 · BUDGET</text>
+        <text class="m" x="220" y="56">enforced, not advisory</text>
+        <text class="d" x="220" y="82">Charged to the node</text>
+        <text class="d" x="220" y="100">AND every ancestor.</text>
+        <text class="d" x="220" y="118">A call is refused when</text>
+        <text class="d" x="220" y="136">a subtree is spent.</text>
+      </g>
+      <g>
+        <rect class="s" x="404" y="10" width="186" height="140" rx="5" fill="#B3C1FF"/>
+        <text class="n" x="418" y="34">3 · ATTEMPTS</text>
+        <text class="m" x="418" y="56">MAX_ATTEMPTS = 2</text>
+        <text class="d" x="418" y="82">Two tries per node,</text>
+        <text class="d" x="418" y="100">and the check-set</text>
+        <text class="d" x="418" y="118">rewrite fires at most</text>
+        <text class="d" x="418" y="136">once, ever.</text>
+      </g>
+      <g>
+        <rect class="s" x="602" y="10" width="186" height="140" rx="5" fill="#DBD5FC"/>
+        <text class="n" x="616" y="34">4 · MONITOR</text>
+        <text class="m" x="616" y="56">free heuristics</text>
+        <text class="d" x="616" y="82">Repeats, oscillation,</text>
+        <text class="d" x="616" y="100">and no-progress end</text>
+        <text class="d" x="616" y="118">the attempt. See</text>
+        <text class="d" x="616" y="136">section 6.</text>
+      </g>
+      <g>
+        <rect class="s" x="800" y="10" width="172" height="140" rx="5" fill="#90DFD3"/>
+        <text class="n" x="814" y="34">5 · ONE FILE</text>
+        <text class="m" x="814" y="56">a regex, not a prompt</text>
+        <text class="d" x="814" y="82">A goal naming exactly</text>
+        <text class="d" x="814" y="100">one file may not split.</text>
+        <text class="d" x="814" y="118">The model was asked</text>
+        <text class="d" x="814" y="136">nicely and declined.</text>
+      </g>
+
+      <!-- budget flow -->
+      <text class="n" x="8" y="188">HOW THE BUDGET DIVIDES</text>
+      <rect class="s" x="8" y="200" width="964" height="34" rx="5" fill="#fff"/>
+      <text class="d" x="20" y="222">parent allocation — 100%</text>
+      <rect class="s" x="8" y="240" width="145" height="34" rx="5" fill="#90DFD3"/>
+      <text class="d" x="20" y="262">15% reserve</text>
+      <rect class="s" x="161" y="240" width="200" height="34" rx="5" fill="#fff"/>
+      <text class="d" x="173" y="262">child · share</text>
+      <rect class="s" x="369" y="240" width="200" height="34" rx="5" fill="#fff"/>
+      <text class="d" x="381" y="262">child · share</text>
+      <rect class="s" x="577" y="240" width="200" height="34" rx="5" fill="#fff"/>
+      <text class="d" x="589" y="262">child · share</text>
+      <rect class="s" x="785" y="240" width="187" height="34" rx="5" fill="#fff"/>
+      <text class="d" x="797" y="262">child · share</text>
+      <text class="d" x="20" y="292">Inside each child: the worker may spend at most 60%, so the
+        definition of done, verification and one retry are always affordable.</text>
+    </svg>
+    <div class="cap">Before budgets were enforced hierarchically, one branch consumed 211k of a
+    250k run against its own 63k allocation — and its three siblings received literally zero
+    tokens.</div>
+  </div>
+</section>
+
+<!-- ───────────────────────────────── 6 ───────────────────────────────── -->
+<section>
+  <h2><span class="n">6</span>Catching itself looping or drifting</h2>
+  <p>Cheap deterministic heuristics run after every tool call and cost nothing. The LLM drift
+  judge — the smallest model in the config — is only consulted when one of them trips.</p>
+
+  <div class="fig">
+    <svg viewBox="0 0 980 300" role="img" aria-label="Monitor patterns: exact repeat, oscillation
+      with period two or three, no progress, and the drift judge trigger">
+      <style>
+        .s{stroke:#000;stroke-width:2}
+        .n{font:800 13px -apple-system,Helvetica,Arial,sans-serif}
+        .d{font:600 12px -apple-system,Helvetica,Arial,sans-serif}
+        .m{font:700 12px ui-monospace,Menlo,monospace}
+      </style>
+      <!-- exact loop -->
+      <text class="n" x="8" y="22">EXACT REPEAT → LOOP</text>
+      <g>
+        <rect class="s" x="8" y="32" width="54" height="34" rx="5" fill="#DC341E"/>
+        <text class="m" x="27" y="54" fill="#fff">A</text>
+        <rect class="s" x="70" y="32" width="54" height="34" rx="5" fill="#DC341E"/>
+        <text class="m" x="89" y="54" fill="#fff">A</text>
+        <rect class="s" x="132" y="32" width="54" height="34" rx="5" fill="#DC341E"/>
+        <text class="m" x="151" y="54" fill="#fff">A</text>
+        <text class="d" x="198" y="54">same tool, same arguments, 3× — order-insensitive hash</text>
+      </g>
+      <!-- oscillation -->
+      <text class="n" x="8" y="98">OSCILLATION, PERIOD 2 OR 3 → LOOP</text>
+      <g>
+        <rect class="s" x="8" y="108" width="54" height="34" rx="5" fill="#FFC900"/>
+        <text class="m" x="27" y="130">A</text>
+        <rect class="s" x="70" y="108" width="54" height="34" rx="5" fill="#B3C1FF"/>
+        <text class="m" x="89" y="130">B</text>
+        <rect class="s" x="132" y="108" width="54" height="34" rx="5" fill="#FFC900"/>
+        <text class="m" x="151" y="130">A</text>
+        <rect class="s" x="194" y="108" width="54" height="34" rx="5" fill="#B3C1FF"/>
+        <text class="m" x="213" y="130">B</text>
+        <rect class="s" x="256" y="108" width="54" height="34" rx="5" fill="#FFC900"/>
+        <text class="m" x="275" y="130">A</text>
+        <rect class="s" x="318" y="108" width="54" height="34" rx="5" fill="#B3C1FF"/>
+        <text class="m" x="337" y="130">B</text>
+        <text class="d" x="384" y="130">undoing its own work, forever</text>
+      </g>
+      <!-- no progress -->
+      <text class="n" x="8" y="174">NO PROGRESS → LOOP</text>
+      <g>
+        <rect class="s" x="8" y="184" width="364" height="34" rx="5" fill="#DBD5FC"/>
+        <text class="d" x="22" y="206">5 steps · no file written · check pass-count frozen</text>
+        <text class="d" x="384" y="206">thinking hard, achieving nothing</text>
+      </g>
+      <!-- drift -->
+      <text class="n" x="8" y="250">DRIFT JUDGE — only on a trigger</text>
+      <g>
+        <rect class="s" x="8" y="260" width="470" height="34" rx="5" fill="#90DFD3"/>
+        <text class="d" x="22" y="282">every 6 steps, or a write to a path no check mentions</text>
+        <rect class="s" x="490" y="260" width="482" height="34" rx="5" fill="#fff"/>
+        <text class="d" x="504" y="282">Nemotron Nano scores drift 0–10 and flags an impossible
+          goal</text>
+      </g>
+    </svg>
+    <div class="cap">Genuine progress clears loop suspicion: the monitor once flagged the very
+    <code>run_checks</code> call that reached 7/7, because it was the third identical call.
+    Re-running checks after a fix is the behaviour we ask for.</div>
+  </div>
+</section>
+
+<!-- ───────────────────────────────── 7 ───────────────────────────────── -->
+<section>
+  <h2><span class="n">7</span>Knowing when to ask a human</h2>
+  <p>This is meant to be rare, and it is the one outcome that cannot be faked by trying harder.
+  The planner must prefix any assumption only a person can settle with
+  <code>NEEDS HUMAN:</code>. A node holding one cannot reach <span class="tag t-done">DONE</span>
+  — <b>even with every check green</b>.</p>
+
+  <div class="fig">
+    <svg viewBox="0 0 980 190" role="img" aria-label="A node with all checks passing is still
+      blocked from done when an unanswerable question remains open">
+      <style>
+        .s{stroke:#000;stroke-width:2}
+        .n{font:800 13px -apple-system,Helvetica,Arial,sans-serif}
+        .d{font:600 12px -apple-system,Helvetica,Arial,sans-serif}
+        .l{stroke:#000;stroke-width:2;fill:none}
+      </style>
+      <defs>
+        <marker id="d" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7"
+                orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#000"/></marker>
+      </defs>
+      <rect class="s" x="8" y="20" width="230" height="70" rx="5" fill="#23A094"/>
+      <text class="n" x="22" y="46" fill="#fff">8 of 9 checks pass</text>
+      <text class="d" x="22" y="68" fill="#fff">two families signed off</text>
+
+      <path class="l" d="M238,55 L288,55" marker-end="url(#d)"/>
+      <rect class="s" x="288" y="20" width="330" height="70" rx="5" fill="#FF90E8"/>
+      <text class="n" x="302" y="46">but one assumption reads:</text>
+      <text class="d" x="302" y="68">"NEEDS HUMAN: which SMTP server?"</text>
+
+      <path class="l" d="M618,55 L668,55" marker-end="url(#d)"/>
+      <rect class="s" x="668" y="20" width="304" height="70" rx="5" fill="#000"/>
+      <text class="n" x="682" y="46" fill="#fff">VERDICT: NEEDS_HUMAN</text>
+      <text class="d" x="682" y="68" fill="#fff">with the question, not a shrug</text>
+
+      <rect class="s" x="8" y="108" width="964" height="66" rx="5" fill="#FFC900"/>
+      <text class="d" x="24" y="132">The checks pass because they test the code we wrote — not
+        the thing we could not know. Running out of budget does not answer the question either,</text>
+      <text class="d" x="24" y="154">so a node that stops with one still open reports
+        NEEDS_HUMAN rather than "stopped", and the question travels up to its parent.</text>
+    </svg>
+    <div class="cap">And the inverse guard: models write <code>NEEDS HUMAN: none</code> to mean
+    "nothing needed". Taking that literally would block a perfectly good node, so it is
+    filtered.</div>
+  </div>
+</section>
+
+<!-- ───────────────────────────────── 8 ───────────────────────────────── -->
+<section>
+  <h2><span class="n">8</span>Which model does what, and why</h2>
+  <p>One Crusoe key gives six model families across roughly a 20× price spread. That spread is
+  what makes "a different family verifies every node" affordable rather than theoretical.</p>
+
+  <table>
+    <tr><th>Role</th><th>Model</th><th>Why this one</th></tr>
+    <tr>
+      <td><b>Root planner</b></td>
+      <td class="mono">deepseek-ai/DeepSeek-V4-Pro</td>
+      <td>Decomposition and the layout contract are the highest-leverage decisions in the run.
+          It makes 1–2 calls and never writes a file.</td>
+    </tr>
+    <tr>
+      <td><b>Every worker</b></td>
+      <td class="mono">nvidia/NVIDIA-Nemotron-3-Super-120B-A12B</td>
+      <td>Measured, not assumed. Nemotron Nano at the leaves burned 23–39k tokens per node and
+          landed checks at 1/3, 1/5, 0/2. Super did the same work in 14k and 3 tool steps.</td>
+    </tr>
+    <tr>
+      <td><b>Drift judge</b></td>
+      <td class="mono">nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B</td>
+      <td>Scoring drift 0–10 is the job it is genuinely good at, and it is called only on a
+          trigger.</td>
+    </tr>
+    <tr>
+      <td><b>Verifiers</b></td>
+      <td class="mono">openai/gpt-oss-120b · google/gemma-4-31b-it · zai-org/GLM-5.3</td>
+      <td>Whichever family contributed nothing to that node. Cheap, and routed automatically.</td>
+    </tr>
+  </table>
+
+  <p><code>done models</code> probes the live catalogue and writes the tiers and the cross-family
+  verifier map to <code>models.json</code>, so a model appearing or disappearing never needs a
+  code edit. That mattered: the live catalogue differs from the docs — there is no
+  <code>meta-llama</code> on Crusoe at all, the zai family is spelled <code>zai-org</code>, and
+  Nemotron carries an <code>NVIDIA-</code> prefix.</p>
+</section>
+
+<!-- ───────────────────────────────── 9 ───────────────────────────────── -->
+<section>
+  <h2><span class="n">9</span>What the live runs taught us</h2>
+  <p>Every mechanism above exists because a run broke without it. These were found by reading
+  traces, not by reasoning about the design.</p>
+  <table>
+    <tr><th>What we saw</th><th>What was actually wrong</th></tr>
+    <tr><td>A node failed with correct code</td>
+        <td>Its own check used <code>wc -l | grep '^10$'</code>, and BSD <code>wc</code> pads with
+        spaces. Checks are now taught to be portable.</td></tr>
+    <tr><td>Correct code failed a negative check</td>
+        <td>The runner inverted negative checks, double-negating the self-inverting commands
+        models actually write. One rule now: exit 0 means pass.</td></tr>
+    <tr><td>A node reported 13.7k tokens, actually spent 46k</td>
+        <td><code>_current_node_id</code> was one shared attribute and siblings run concurrently,
+        so every call was charged to whichever sibling ran last.</td></tr>
+    <tr><td>One branch ate the whole run</td>
+        <td>Node budgets were advisory. 211k spent against a 63k allocation; three siblings got
+        zero.</td></tr>
+    <tr><td>102 of 108 calls answered by one model</td>
+        <td>A model was blacklisted permanently after two errors and never retried, so one burst
+        of 429s removed the worker tier for the whole run.</td></tr>
+    <tr><td>Three check sets silently replaced by useless ones</td>
+        <td>The check writer's JSON hit <code>max_tokens</code> and the generic fallback took
+        over. Good checks are now kept when a rewrite is unreadable.</td></tr>
+    <tr><td>Siblings built incompatible layouts</td>
+        <td>One wrote <code>storage.py</code> flat, another a <code>notes/</code> package, and a
+        third's tests could find neither. The root now owns the layout, and the prerequisite runs
+        first.</td></tr>
+    <tr><td>"Human needed: no" — with two questions recorded</td>
+        <td>The <code>NEEDS HUMAN:</code> convention was in the prompt from day one and nothing
+        ever read it.</td></tr>
+  </table>
+</section>
+
+<!-- ───────────────────────────────── 10 ──────────────────────────────── -->
+<section>
+  <h2><span class="n">10</span>Honest limits</h2>
+  <div class="grid">
+    <div class="box">
+      <h4>It is slow</h4>
+      <p>A four-artifact split takes 8–16 minutes. Crusoe rate-limits sustained request rate, and
+      the backoff chains dominate. Concurrency is not the limiter — four parallel requests return
+      in under a second.</p>
+    </div>
+    <div class="box">
+      <h4>It does not always finish</h4>
+      <p>The hero goal reaches a fully green tree sometimes, and otherwise stops with an exact
+      account of which checks failed. A stop is a designed outcome, not a crash — but it is not
+      a green tree.</p>
+    </div>
+    <div class="box">
+      <h4>Small units only</h4>
+      <p>No network and no credentials in the sandbox, goals are one-liner sized, depth caps at 3.
+      The bet is that trustworthy small units are what you need before you can stack anything
+      bigger.</p>
+    </div>
+    <div class="box">
+      <h4>Verification costs real money</h4>
+      <p>Roughly 40% of a run's tokens go to checking rather than building. That is the price of
+      the claim, and the whole argument for a cheap tier doing the work.</p>
+    </div>
+  </div>
+  <blockquote>The point was never an agent that always succeeds. It is an agent whose
+  <i>report</i> you can act on without re-reading the work — including when the report says
+  no.</blockquote>
+</section>
+
+</main>
+
+<footer>
+  Every claim here is checkable: <code>uv run done replay runs/demo-final/demo_02_refusal</code>,
+  or open any run from <a href="./">all runs</a>. The full judgment log, with the evidence that
+  produced each fix, is in <code>DECISIONS.md</code>.
+</footer>
