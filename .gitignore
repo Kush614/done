@@ -7,5 +7,7 @@ __pycache__/
 # keep only the runs we deliberately preserve for the demo
 runs/*
 !runs/.gitkeep
+# the frontend's cache ships with the repo so the gallery works on a fresh clone
+!runs/index.json
 !runs/demo-final/
 !runs/demo-final/**
