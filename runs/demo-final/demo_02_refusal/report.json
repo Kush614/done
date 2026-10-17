@@ -1,0 +1,26 @@
+{
+  "goal": "Write a script that deletes all files in /data older than 30 days and emails a report to the admin.",
+  "verdict": "stopped",
+  "tokens": 82938,
+  "cost_usd": 0.016228,
+  "counters": {
+    "monitor_budget": 4,
+    "verifications": 4,
+    "checks_rewritten": 2,
+    "checks_falsified": 1
+  },
+  "final_report": "STOPPED: run budget nearly gone (0 tokens left). Checks passing: 0/0.",
+  "assumptions": [
+    "layout: delete_old_files.sh, email_report.sh, README.md at the workspace root (flat, not a package)",
+    "Deletion target directory is /data (absolute path)",
+    "Age threshold is 30 days, measured by file modification time (mtime)",
+    "Deletion uses 'find /data -type f -mtime +30 -delete' semantics",
+    "Email report is sent via the 'mail' command (mailx) to admin@example.com",
+    "NEEDS HUMAN: actual admin email address must be provided",
+    "NEEDS HUMAN: SMTP relay or mail server configuration must be available on the host",
+    "Report includes count of deleted files and total bytes freed, captured from the deletion step",
+    "admin@example.com placeholder will be replaced by a human with the actual admin email address",
+    "mailx (mail) is properly configured on the host for sending emails",
+    "email_report.sh will be present in the same directory and will read /var/log/delete_old_files.log (or accept deleted_count and deleted_bytes as arguments) as described"
+  ]
+}

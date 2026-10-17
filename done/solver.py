@@ -386,7 +386,29 @@ async def replan_or_stop(node: Node, children: list[Node], ctx) -> Node:
 
 
 def _stop(node: Node, ctx, why: str, children: list[Node] | None = None) -> Node:
-    """An honest stop. Says what passed, what failed, and why we are not claiming done."""
+    """An honest stop. Says what passed, what failed, and why we are not claiming done.
+
+    If a question only a human can answer is still open, that is the more useful thing to
+    report than "ran out of budget" — demo_02 stopped on budget while carrying two recorded
+    human questions and the report said "Human needed: no". (DECISIONS 16:45)
+    """
+    if children:
+        for c in children:
+            node.human_questions += [q for q in c.human_questions
+                                     if q not in node.human_questions]
+    if node.human_questions:
+        node.status = "needs_human"
+        v = node.verification
+        passed = f"{v.checks_passed}/{v.checks_total}" if v else "0/0"
+        node.final_report = (
+            f"NOT done, needs a human ({why}). Checks passing: {passed}. "
+            f"This cannot be called done until you answer: "
+            + " | ".join(node.human_questions)
+        )
+        node.log(f"stopped with {len(node.human_questions)} unanswered human question(s)")
+        ctx.trace.event("needs_human", node.id, questions=node.human_questions, why=why)
+        ctx.trace.node_update(node)
+        return node
     node.status = "stopped"
     v = node.verification
     passed = f"{v.checks_passed}/{v.checks_total}" if v else "0/0"

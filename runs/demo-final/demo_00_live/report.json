@@ -1,0 +1,24 @@
+{
+  "goal": "Write slugify.py with a slugify(text) function that lowercases, strips punctuation and joins words with hyphens, plus tests/test_slugify.py covering unicode, punctuation and empty input.",
+  "verdict": "stopped",
+  "tokens": 80945,
+  "cost_usd": 0.037497,
+  "counters": {
+    "verifications": 5,
+    "checks_rewritten": 2,
+    "checks_falsified": 1
+  },
+  "final_report": "STOPPED: run budget nearly gone (0 tokens left). Checks passing: 4/6. Still failing: integration_test_suite_runs, integration_negative_bad_import.",
+  "assumptions": [
+    "layout: slugify.py and tests/test_slugify.py at the workspace root (flat, not a package)",
+    "slugify(text) signature: accepts a string, returns a string",
+    "Slugification rules: lowercase the text, strip all punctuation (anything not a letter, number, or whitespace), split on whitespace, join words with single hyphens",
+    "Unicode handling: preserve non-ASCII letters/digits (e.g. \u00e9, \u00fc, \u4e2d) and treat them as word characters; strip Unicode punctuation",
+    "Empty input: slugify('') returns ''",
+    "Whitespace: collapse multiple spaces/tabs/newlines into a single hyphen separator",
+    "No external dependencies beyond Python standard library",
+    "NEEDS HUMAN: none \u2014 all behavior is determinable from the stated rules",
+    "slugify.py exists at the workspace root and exposes a slugify(text) function matching the specification.",
+    "No additional dependencies or configuration are needed."
+  ]
+}

@@ -125,9 +125,16 @@ def final_report(nodes: dict[str, Node], budget, cfg: Config, counters: dict,
     )
     if per_model:
         t.add_row("By model", per_model)
-    human = [n for n in nodes.values() if n.status == "needs_human"]
-    t.add_row("Human needed", "no" if not human else
-              "YES — " + (human[0].final_report or "").split("\n")[-1][:140])
+    # any recorded question counts, not just a node that reached the needs_human status:
+    # a node can run out of budget with the question still open.
+    questions: list[str] = []
+    for n in nodes.values():
+        questions += [q for q in n.human_questions if q not in questions]
+    if questions:
+        t.add_row("Human needed", Text("YES — " + "; ".join(questions[:3]),
+                                       style=STATUS_STYLE["needs_human"]))
+    else:
+        t.add_row("Human needed", "no")
     t.add_row("Trace", f"{run_dir}/tree.json  ·  {run_dir}/events.jsonl")
 
     body: list = [build_tree(nodes), Text(""), t]

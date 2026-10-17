@@ -155,3 +155,12 @@ Format: `HH:MM — decision — why`
   live run, the full `demo_01` tree ships preserved in `runs/demo-final/` for `done replay`
   (instant, zero LLM calls), and `demo_02` is the refusal. Preferring a replay over a staged live
   run is the honest trade: the replay is a real run, not a mock.
+- **16:45 — An open human question outranks a budget stop.** demo_02 ran out of budget during
+  re-planning while the root carried two recorded `human_questions` ("actual admin email address",
+  "SMTP relay or mail server configuration"), ended `STOPPED`, and the report line said
+  **"Human needed: no"**. The questions were captured correctly; nothing consumed them on the stop
+  path, because the needs_human verdict only fired when a node would otherwise be declared *done*
+  or when a child escalated. Running out of money does not answer the question. `_stop()` now
+  returns `needs_human` when a question is still open (keeping the reason it stopped in the
+  report), a parent absorbs its children's questions on that path too, and the report counts every
+  recorded question rather than only nodes that reached the needs_human status.

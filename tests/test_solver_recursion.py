@@ -269,3 +269,24 @@ async def test_a_single_file_root_goal_is_not_challenged(ctx, node_factory, monk
     decision, subgoals = await planner_mod.decide(node, ctx)
     assert decision == "EXECUTE"
     assert calls == ["planner"], "a one-file goal must not be re-asked"
+
+
+async def test_a_budget_stop_with_an_open_human_question_reports_needs_human(ctx, node_factory):
+    """demo_02 ran out of budget while carrying two recorded human questions, ended 'STOPPED',
+    and the report line said 'Human needed: no'. Running out of money does not answer the
+    question."""
+    node = node_factory()
+    node.human_questions = ["which SMTP server and which admin address?"]
+    out = solver._stop(node, ctx, "run budget nearly gone")
+
+    assert out.status == "needs_human"
+    assert "SMTP" in out.final_report
+    assert "needs a human" in out.final_report
+    assert "run budget nearly gone" in out.final_report, "still says why it stopped"
+
+
+async def test_a_plain_budget_stop_is_still_a_plain_stop(ctx, node_factory):
+    node = node_factory()
+    out = solver._stop(node, ctx, "attempt cap reached")
+    assert out.status == "stopped"
+    assert "STOPPED" in out.final_report
