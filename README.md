@@ -12,6 +12,13 @@ confidently report success. Here the assumptions are printed, the checks are wri
 work, **the checks themselves are falsified before anyone trusts them**, and the agent that did
 the work is never the agent that decides whether it is done.
 
+### ▶ **[Try it live — every run, replayable in the browser](https://speedy-sulfur-bqm7xar.vercel.app/viewer/)**
+
+No install, no API key. Four real runs with their full traces:
+**[the refusal](https://speedy-sulfur-bqm7xar.vercel.app/viewer/run.html?run=demo-final/demo_02_refusal)** ·
+**[how it works](https://speedy-sulfur-bqm7xar.vercel.app/viewer/about.html)** ·
+**[for judges](https://speedy-sulfur-bqm7xar.vercel.app/viewer/judges.html)**
+
 ![Every run, cached](docs/gallery.png)
 
 ---
@@ -75,11 +82,17 @@ python3 -m http.server 8777     # from the repo root, not from viewer/
 open http://localhost:8777/viewer/
 ```
 
-| page | what it is |
-|---|---|
-| `viewer/index.html` | gallery of every run — verdict, checks, families, cost, open questions |
-| `viewer/run.html?run=<id>` | one run's tree, checks, verdicts and monitor flags; polls live |
-| `viewer/about.html` | the full design explanation with diagrams |
+| page | what it is | live |
+|---|---|---|
+| `viewer/index.html` | gallery of every run — verdict, checks, families, cost, open questions | [open](https://speedy-sulfur-bqm7xar.vercel.app/viewer/) |
+| `viewer/run.html?run=<id>` | one run's tree, checks, verdicts and monitor flags; polls live | [open](https://speedy-sulfur-bqm7xar.vercel.app/viewer/run.html?run=demo-final/demo_02_refusal) |
+| `viewer/about.html` | the full design explanation with diagrams | [open](https://speedy-sulfur-bqm7xar.vercel.app/viewer/about.html) |
+| `viewer/judges.html` | the objection answered first, then the receipts | [open](https://speedy-sulfur-bqm7xar.vercel.app/viewer/judges.html) |
+
+The deployed site is built by `./make_site.sh`, which copies an **allowlist** of static files into
+a clean `site/` directory. That is deliberate: deploy CLIs upload from the working directory
+rather than from git, and `.env` lives in the repo root — an allowlist makes shipping a secret
+impossible rather than merely unlikely. The script refuses to finish if a key is present.
 
 ---
 
@@ -249,10 +262,10 @@ produced — so every claim here is checkable offline.
 
 | run | verdict | what it shows |
 |---|---|---|
-| `demo_02_refusal` | **NEEDS_HUMAN** | 8/9 checks, two families, still says no |
-| `notes_cli_done` | **DONE** | a clean verified completion |
-| `demo_01_tree` | INCOMPLETE | the four-way split, Nemotron leaves, cross-family verifiers |
-| `demo_00_live` | STOPPED | leaves verified, integration checks caught the seam |
+| [`demo_02_refusal`](https://speedy-sulfur-bqm7xar.vercel.app/viewer/run.html?run=demo-final/demo_02_refusal) | **NEEDS_HUMAN** | 8/9 checks, two families, still says no |
+| [`notes_cli_done`](https://speedy-sulfur-bqm7xar.vercel.app/viewer/run.html?run=demo-final/notes_cli_done) | **DONE** | a clean verified completion |
+| [`demo_01_tree`](https://speedy-sulfur-bqm7xar.vercel.app/viewer/run.html?run=demo-final/demo_01_tree) | INCOMPLETE | the four-way split, Nemotron leaves, cross-family verifiers |
+| [`demo_00_live`](https://speedy-sulfur-bqm7xar.vercel.app/viewer/run.html?run=demo-final/demo_00_live) | STOPPED | leaves verified, integration checks caught the seam |
 
 ---
 
