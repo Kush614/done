@@ -1,97 +1,54 @@
-# Old File Deletion and Reporting Scripts
+# File Maintenance Scripts
 
-## Overview
+## Purpose
 
-This repository contains two Bash scripts that work together to clean up old files in `/data` and notify an administrator about the cleanup:
+- **`delete_old_files.sh`** – Scans the `/data` directory, finds files older than 30 days, deletes them, and records each deleted file path in a daily log file.
+- **`email_report.sh`** – Reads the log produced by `delete_old_files.sh`, builds a short report (number of files deleted and their paths) and emails that report to the system administrator.
 
-1. **`delete_old_files.sh`** – Finds and deletes files older than 30 days, then writes a summary log.
-2. **`email_report.sh`** – Reads the summary log (or accepts values via arguments) and sends a plain‑text email report.
-
-Both scripts are deliberately simple and rely only on standard GNU utilities that are typically available on most Linux distributions.
-
----
-
-## Prerequisites / Dependencies
-
-- **GNU `find`** – Used by `delete_old_files.sh` to locate files by modification time.
-- **`mail` (mailx)** – Used by `email_report.sh` to send the email. Ensure the `mail` command is installed and correctly configured to use your system's SMTP relay or mail server.
-- **Write permission** to `/var/log/delete_old_files.log` for the user executing the scripts.
-- **Read permission** to `/data` for the user executing the scripts.
-
----
-
-## Configuration
-
-1. **Administrator email address** – Edit `email_report.sh` (or set an environment variable) to specify the address that should receive the report. The placeholder in the script is `ADMIN_EMAIL="admin@example.com"`. Replace `admin@example.com` with the real address.
-2. **Mail server** – The `mail` command uses the system's mail configuration (e.g., `/etc/mail.rc`, `/etc/ssmtp/ssmtp.conf`, or `postfix` settings). Ensure that the host can send outbound mail to the administrator's domain.
-
----
+These two scripts are intended to be run together (or scheduled via cron) to keep the `/data` volume clean and to keep the admin informed of what was removed.
 
 ## Usage
 
-### 1. Delete old files
-
 ```bash
-chmod +x delete_old_files.sh
+# First, delete old files and create the log
 ./delete_old_files.sh
-```
 
-The script will:
-- Search `/data` for regular files (`-type f`) with a modification time older than 30 days (`-mtime +30`).
-- Delete those files.
-- Write a single‑line log entry to `/var/log/delete_old_files.log` in the format:
-
-```
-deleted_count=<N> deleted_bytes=<B>
-```
-
-where `<N>` is the number of files removed and `<B>` is the total number of bytes freed.
-
-The script exits with status `0` on success; any failure during the `find`/`delete` process results in a non‑zero exit code.
-
-### 2. Send the email report
-
-```bash
-chmod +x email_report.sh
+# Then, send the email report based on today's log
 ./email_report.sh
 ```
 
-`email_report.sh` will:
-- Read `/var/log/delete_old_files.log` (or accept `deleted_count` and `deleted_bytes` as command‑line arguments).
-- Compose a plain‑text email with subject **"Old file deletion report"** and a body that includes the count and bytes.
-- Send the email using the `mail` command to the configured administrator address.
+Both scripts are self‑contained Bash scripts and can be executed directly from the repository root. They assume the working directory is the repository root so that relative paths (e.g., the temporary log directory) resolve correctly.
 
-The script exits with status `0` on success; it returns a non‑zero code if the log file is missing, malformed, or if the mail command fails.
+## Configuration
 
----
+1. **Administrator e‑mail address** – Edit `email_report.sh` (or set an environment variable) to replace the placeholder `admin@example.com` with the real address of the person who should receive the report.
+2. **Mail server** – The `mail` command is used to send the e‑mail. Ensure a working MTA (e.g., `sendmail`, `postfix`, or `ssmtp`) is installed and correctly configured on the host. The script does not configure the MTA; it only invokes `mail`.
 
-## Log Format
+If the mail subsystem is not available, the email step will fail, but the deletion step will still work.
 
-The deletion script produces a single line in `/var/log/delete_old_files.log` that follows this exact pattern:
+## Log File Location and Format
 
+- **Location:** `/tmp/deleted_files_YYYYMMDD.log` where `YYYYMMDD` is the current date (e.g., `/tmp/deleted_files_20231017.log`).
+- **Format:** One absolute file path per line, representing each file that was successfully deleted by `delete_old_files.sh`.
+- The log file is created automatically by `delete_old_files.sh`. If no files match the criteria, the log file will not be created, and `email_report.sh` will send a "No files deleted" message.
+
+## Example: Running Both Scripts in Sequence
+
+```bash
+# Run the deletion script – it will create /tmp/deleted_files_20231017.log
+./delete_old_files.sh
+
+# Verify the log (optional)
+cat /tmp/deleted_files_$(date +%Y%m%d).log
+
+# Send the report – the e‑mail will contain the count and list of deleted files
+./email_report.sh
 ```
-deleted_count=<N> deleted_bytes=<B>
-```
 
-- `deleted_count` – Number of files that were removed.
-- `deleted_bytes` – Total size (in bytes) of the removed files.
-
-Both values are integers. The `email_report.sh` script parses this line to build the email body.
-
----
-
-## Scheduling (Optional)
-
-To run the cleanup automatically, add a cron entry (run as root or a user with appropriate permissions):
+When scheduled via `cron`, you might use a single line that runs both scripts one after the other:
 
 ```cron
-0 2 * * * /path/to/delete_old_files.sh && /path/to/email_report.sh
+0 2 * * * /path/to/repo/delete_old_files.sh && /path/to/repo/email_report.sh
 ```
 
-This example runs the deletion at 02:00 AM daily and, if successful, immediately sends the report.
-
----
-
-## License
-
-These scripts are provided **as‑is** under the MIT License. Feel free to adapt them to your environment.
+This runs the cleanup every night at 02:00 AM and emails the results to the configured administrator.
