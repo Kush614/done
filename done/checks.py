@@ -4,14 +4,11 @@
 from __future__ import annotations
 
 import json
-import sys
 from typing import Any
 
 from .models import Check
 from .prompts import render
 from .sandbox import SandboxViolation
-
-PYTHON = sys.executable or "python3"
 
 
 async def run_checks(node_checks: list[Check], ctx: Any, *, check_ids: list[str] | None = None,
@@ -56,8 +53,9 @@ async def _run_one(check: Check, ctx: Any) -> tuple[bool, str]:
         if not cmd:
             return False, "[no command on check]"
         if check.kind == "pytest" and "pytest" not in cmd:
-            cmd = f"{PYTHON} -m pytest -q {cmd}"
-        cmd = cmd.replace("python3", PYTHON).replace("python ", f"{PYTHON} ")
+            cmd = f"python3 -m pytest -q {cmd}"
+        # No command rewriting: the sandbox PATH puts this interpreter's bin dir first, so
+        # `python3`, `python` and `pytest` already resolve to the environment that has pytest.
         res = await sb.run_shell(cmd)
         ok = res.ok
         if check.negative:

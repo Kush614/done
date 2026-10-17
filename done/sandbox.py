@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import os
 import subprocess
+import sys
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -106,8 +107,11 @@ class Sandbox:
 
     # --- shell --------------------------------------------------------------
     def _env(self) -> dict[str, str]:
+        # our own bin dir first, so `python3` and `pytest` in a check resolve to an interpreter
+        # that actually has pytest. Commands are never rewritten.
+        own_bin = str(Path(sys.executable).parent)
         return {
-            "PATH": os.environ.get("PATH", "/usr/bin:/bin:/usr/local/bin"),
+            "PATH": own_bin + os.pathsep + os.environ.get("PATH", "/usr/bin:/bin:/usr/local/bin"),
             "HOME": str(self.root),
             "PYTHONDONTWRITEBYTECODE": "1",
             "PYTHONPATH": str(self.root),
