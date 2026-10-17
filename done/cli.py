@@ -217,9 +217,9 @@ def _replay(run_dir: Path) -> int:
 
 
 # --------------------------------------------------------------------------- index
-def _index(runs_root: Path) -> int:
-    payload = build_index(runs_root)
-    path = write_index(runs_root)
+def _index(runs_root: Path, preserved_only: bool = False) -> int:
+    payload = build_index(runs_root, preserved_only)
+    path = write_index(runs_root, preserved_only)
     t = payload["totals"]
     table = Table(title=f"{t['runs']} runs cached → {path}", title_style="bold")
     table.add_column("run"); table.add_column("verdict"); table.add_column("checks", justify="right")
@@ -262,6 +262,8 @@ def main(argv: list[str] | None = None) -> int:
 
     p_index = sub.add_parser("index", help="cache a summary of every run into runs/index.json")
     p_index.add_argument("--out", type=Path, default=REPO_ROOT / "runs")
+    p_index.add_argument("--preserved-only", action="store_true",
+                         help="only runs under demo-final (the cache that ships)")
 
     args = parser.parse_args(argv)
     try:
@@ -270,7 +272,7 @@ def main(argv: list[str] | None = None) -> int:
         if args.cmd == "replay":
             return _replay(args.run_dir)
         if args.cmd == "index":
-            return _index(args.out)
+            return _index(args.out, args.preserved_only)
         goal = args.goal
         if goal.startswith("@"):
             goal = Path(goal[1:]).read_text().strip()

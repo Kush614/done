@@ -173,3 +173,13 @@ Format: `HH:MM — decision — why`
   *Note for transparency:* the preserved `runs/demo-final/demo_00_live/tree.json` had that one
   parsed field rewritten to match current behaviour. Its `events.jsonl` — the raw append-only
   record of the run — is untouched, and no other preserved run was edited.
+- **17:20 — The frontend reads a cached manifest, not the web server's directory listing.**
+  `runs/index.json` is written after every run and by `done index`; the gallery and the trace view
+  both read it. Scraping the autoindex only worked under `python -m http.server`, broke on any
+  static host, and told the page nothing about a run until it had fetched the whole tree.
+- **17:20 — The committed cache is `--preserved-only`.** Only the four runs under
+  `runs/demo-final/` are in the repo, so a full index on a fresh clone would show eighteen cards
+  whose traces are not there to open.
+- **17:20 — Non-questions are filtered at index time, not by rewriting runs.** Traces recorded
+  before the "NEEDS HUMAN: none" fix stay exactly as they were written; the cache the frontend
+  reads applies current semantics.

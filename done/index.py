@@ -96,8 +96,13 @@ def summarize_run(run_dir: Path) -> dict[str, Any] | None:
     }
 
 
-def build_index(runs_root: Path) -> dict[str, Any]:
-    """Scan runs/ and runs/demo-final/ and cache a summary of every run."""
+def build_index(runs_root: Path, preserved_only: bool = False) -> dict[str, Any]:
+    """Scan runs/ and runs/demo-final/ and cache a summary of every run.
+
+    `preserved_only` builds the cache that ships with the repo: only runs under
+    demo-final are committed, so a full index on a fresh clone would show cards
+    whose trace is not there to open.
+    """
     rows: list[dict[str, Any]] = []
     for d in sorted(runs_root.iterdir()) if runs_root.exists() else []:
         if not d.is_dir():
@@ -106,6 +111,8 @@ def build_index(runs_root: Path) -> dict[str, Any]:
             for sub in sorted(d.iterdir()):
                 if sub.is_dir() and (row := summarize_run(sub)):
                     rows.append(row)
+            continue
+        if preserved_only:
             continue
         if row := summarize_run(d):
             rows.append(row)
@@ -124,8 +131,8 @@ def build_index(runs_root: Path) -> dict[str, Any]:
     return {"generated_at": time.strftime("%Y-%m-%dT%H:%M:%S"), "totals": totals, "runs": rows}
 
 
-def write_index(runs_root: Path) -> Path:
-    payload = build_index(runs_root)
+def write_index(runs_root: Path, preserved_only: bool = False) -> Path:
+    payload = build_index(runs_root, preserved_only)
     path = runs_root / INDEX_NAME
     path.write_text(json.dumps(payload, indent=2) + "\n")
     return path

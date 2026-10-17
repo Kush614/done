@@ -43,7 +43,7 @@ uv run pytest -q                # 94 offline tests, ~15s
 Frontend (static, no build step, two pages):
 
 ```bash
-uv run done index               # cache every run into runs/index.json
+uv run done index               # cache every local run into runs/index.json
 python3 -m http.server 8777     # from the repo root
 open http://localhost:8777/viewer/      # gallery of every run
 ```
@@ -58,6 +58,11 @@ open http://localhost:8777/viewer/      # gallery of every run
 
 Both read `runs/index.json`, which `done run` refreshes automatically. Nothing scrapes a
 directory listing, so the whole frontend works on any static host.
+
+The cache committed here is built with `done index --preserved-only`: only the four runs under
+`runs/demo-final/` ship with the repo, so every card in a fresh clone opens. Running anything
+locally rewrites it to include your own runs — that one file showing as modified in `git status`
+is expected.
 
 ## What makes a "done" claim trustworthy here
 
