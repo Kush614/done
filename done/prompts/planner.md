@@ -8,11 +8,19 @@ DECISIONS MADE ABOVE YOU: {{ancestors_context}}
 YOUR DEPTH: {{depth}} (max {{max_depth}})
 YOUR TOKEN BUDGET: {{budget_tokens}}
 
-HOW TO DECIDE
-- EXECUTE if the goal is one artifact, or reachable in roughly ten tool calls or fewer.
-  A single module, a single test file, a README — these are EXECUTE.
-- SPLIT only if the goal genuinely contains independent pieces that could be done in parallel by
-  people who never speak to each other. 2 to {{max_children}} sub-goals.
+HOW TO DECIDE — count the DELIVERABLE ARTIFACTS, not the tool calls
+An artifact is a file, or a tightly-coupled group of files, that someone could review on its own.
+A storage module is one. A command-line entry point is one. A test suite is one. A README is one.
+
+- **EXECUTE only when the goal produces ONE artifact.** A single module, a single test file, a
+  single README: EXECUTE.
+- **SPLIT when the goal names TWO OR MORE artifacts.** "a CLI with four commands, JSON storage,
+  tests and a README" is four artifacts — that is a SPLIT, not one big EXECUTE, even though you
+  could type all four files yourself. Doing it yourself wastes the cheaper models below you and
+  leaves each piece unverified in isolation.
+- Do not reason about how many tool calls it would take you. That is not the question. The question
+  is whether a stranger could be handed one piece and do it without seeing the others.
+- 2 to {{max_children}} sub-goals.
 - If a sub-goal must exist before the others make sense (a storage layer, a data format), make it
   sub-goal #1 and state the contract it will expose in its `why` — siblings will be told about it
   and must not re-invent it.
@@ -38,3 +46,14 @@ Return ONLY this JSON object:
 }
 `subgoals` must be [] when decision is EXECUTE, and 2-{{max_children}} items whose budget_share
 values sum to about 1.0 when decision is SPLIT.
+
+WORKED EXAMPLE of a correct SPLIT, for "build a CLI called notes with add/list/search/delete,
+JSON storage, tests and a README":
+  1. "write storage.py exposing load() -> list[dict] and save(notes) over ./notes.json, plus
+      add(text) -> dict, search(term) -> list, delete(id) -> bool; ids are ints from 1"  (0.3)
+  2. "write cli.py, an argparse entry point with subcommands add/list/search/delete that calls
+      storage.py and exits non-zero on a missing id"                                     (0.3)
+  3. "write tests/test_notes.py covering all four commands, including case-insensitive search
+      and deleting a missing id"                                                         (0.25)
+  4. "write README.md documenting all four commands with a usage example for each"        (0.15)
+Note sub-goal 1 is the shared prerequisite and names the exact interface the others depend on.

@@ -158,10 +158,16 @@ async def _adjudicate(node: Node, vmodel: str, ctx, meta: dict, results: dict):
     used_calls = 0
     for _ in range(MAX_INDEPENDENT_TOOL_CALLS + 2):
         try:
+            offering_tools = used_calls < MAX_INDEPENDENT_TOOL_CALLS
             res = await llm.chat(
                 vmodel, messages,
-                tools=tools.VERIFIER_TOOL_SCHEMAS if used_calls < MAX_INDEPENDENT_TOOL_CALLS else None,
-                max_tokens=1400, tag="verifier", ctx=ctx,
+                tools=tools.VERIFIER_TOOL_SCHEMAS if offering_tools else None,
+                # The ruling is the one call that must not be cut off: a truncated JSON object
+                # parses to {} and the verdict silently falls back to check results alone,
+                # losing the independent findings. (DECISIONS 14:25)
+                json_mode=not offering_tools,
+                max_tokens=1400 if offering_tools else 2000,
+                tag="verifier", ctx=ctx,
                 fallback=ctx.cfg.cross_family_fallbacks(node.model),
             )
         except llm.BudgetExhausted:
@@ -197,6 +203,11 @@ async def _adjudicate(node: Node, vmodel: str, ctx, meta: dict, results: dict):
             continue
 
         data = res.json()
+        if not data and (res.content or "").strip():
+            # it said something we could not read; keep the evidence rather than shrugging
+            ctx.trace.event("verifier_unparsed", node.id, model=res.model_used,
+                            content_head=(res.content or "")[:400],
+                            completion_tokens=res.usage.get("completion"))
         verdict = str(data.get("verdict", "")).upper()
         if verdict not in ("DONE", "NOT_DONE", "CHECKS_INADEQUATE"):
             verdict = "DONE" if results["passed"] == results["total"] and results["total"] else "NOT_DONE"

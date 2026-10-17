@@ -53,10 +53,12 @@ def _result(content=None, tool_calls=None, model="openai/gpt-oss-120b") -> LLMRe
 class FakeModels:
     """A scripted, cooperative model farm. Writes real files; the checks really run."""
 
-    def __init__(self, *, split: bool, lie: bool = False, weak_checks: bool = False):
+    def __init__(self, *, split: bool, lie: bool = False, weak_checks: bool = False,
+                 tautological: bool = False):
         self.split = split
         self.lie = lie                 # worker claims done without the checks passing
-        self.weak_checks = weak_checks  # first check set is inadequate
+        self.weak_checks = weak_checks   # first set fails on empty but does not test the goal
+        self.tautological = tautological  # first set PASSES on an empty workspace
         self.worker_steps: dict[str, int] = {}
         self.calls: list[str] = []
         self.dod_rounds: dict[str, int] = {}
@@ -118,11 +120,18 @@ class FakeModels:
 
     def _checks(self, node_id: str, tag: str) -> dict:
         self.dod_rounds[node_id] = self.dod_rounds.get(node_id, 0) + 1
-        if self.weak_checks and tag == "dod_writer":
-            # deliberately useless: passes whatever the worker does
+        if self.tautological and tag == "dod_writer":
+            # passes before any work exists, so it proves nothing: falsification must catch it
             return {"checks": [
-                {"id": "w1", "description": "something exists", "kind": "shell",
+                {"id": "w1", "description": "something is true", "kind": "shell",
                  "command": "true"},
+            ]}
+        if self.weak_checks and tag == "dod_writer":
+            # survives falsification (fails on an empty workspace) but still does not test the
+            # goal — only the meta-verifier can reject this one
+            return {"checks": [
+                {"id": "w1", "description": "a file called storage.py exists",
+                 "kind": "file_exists", "path": "storage.py"},
             ]}
         return {"checks": [
             {"id": "c1", "description": "storage.py round-trips a note", "kind": "shell",
@@ -155,7 +164,7 @@ class FakeModels:
     def _meta(self, ctx, node_id: str) -> dict:
         node = ctx.nodes.get(node_id)
         checks = node.dod if node else []
-        if self.weak_checks and self.dod_rounds.get(node_id, 0) == 1:
+        if (self.weak_checks or self.tautological) and self.dod_rounds.get(node_id, 0) == 1:
             return {"checks": [{"id": c.id, "meta_verified": False,
                                 "reason": "passes regardless of whether the goal is met"}
                                for c in checks],
@@ -277,3 +286,49 @@ async def test_a_mid_call_fallback_to_the_workers_own_family_voids_the_verdict(
     # and the trace names what actually happened, not what we asked for
     events = [json.loads(l) for l in (ctx.run_dir / "events.jsonl").read_text().splitlines()]
     assert any(e["type"] == "independence_lost" for e in events)
+
+
+async def test_a_tautological_check_is_caught_before_any_work(ctx, node_factory, fake):
+    """`command: true` passes on an empty workspace, so it proves nothing. Catch it at birth."""
+    f = fake(split=False, tautological=True)
+    node = node_factory(depth=ctx.cfg.MAX_DEPTH, model="openai/gpt-oss-120b")
+    out = await solver.solve(node, ctx)
+
+    events = [json.loads(l) for l in (ctx.run_dir / "events.jsonl").read_text().splitlines()]
+    falsify = [e for e in events if e["type"] == "falsify"]
+    assert falsify, "the checks were never run against the empty workspace"
+    assert falsify[0]["payload"]["tautologies"] == ["w1"]
+    assert ctx.counters.get("checks_falsified") == 1
+    assert [c.id for c in out.dod] != ["w1"], "the tautology was replaced before work started"
+
+
+async def test_a_malformed_check_is_rewritten_not_blamed_on_the_code(ctx, node_factory,
+                                                                     monkeypatch):
+    """The real demo_01 failure: a check containing invalid Python can never pass."""
+    f = FakeModels(split=False)
+    broken = {"checks": [
+        {"id": "bad", "description": "module imports", "kind": "shell",
+         "command": "python3 -c \"import notes if True else None\""},
+        {"id": "ok", "description": "file exists", "kind": "file_exists", "path": "storage.py"},
+    ]}
+    rounds = {"n": 0}
+    real_checks = f._checks
+
+    def checks(node_id, tag):
+        rounds["n"] += 1
+        return broken if rounds["n"] == 1 else real_checks(node_id, tag)
+
+    f._checks = checks
+    monkeypatch.setattr(llm, "chat", f.chat)
+    for mod_name in ("planner", "dod_writer", "worker", "verifier", "solver", "checks", "monitor"):
+        mod = __import__(f"done.{mod_name}", fromlist=["llm"])
+        if hasattr(mod, "llm"):
+            monkeypatch.setattr(mod.llm, "chat", f.chat)
+
+    node = node_factory(depth=ctx.cfg.MAX_DEPTH, model="openai/gpt-oss-120b")
+    out = await solver.solve(node, ctx)
+
+    events = [json.loads(l) for l in (ctx.run_dir / "events.jsonl").read_text().splitlines()]
+    falsify = [e for e in events if e["type"] == "falsify"][0]
+    assert falsify["payload"]["malformed"] == ["bad"]
+    assert "bad" not in [c.id for c in out.dod], "the broken check was replaced"

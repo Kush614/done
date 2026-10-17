@@ -18,7 +18,7 @@ def _dod() -> list[Check]:
 def stub(monkeypatch):
     """Patch the four LLM-backed stages so solve()'s control flow is what is under test."""
     calls = {"plan": 0, "dod_write": 0, "dod_rewrite": 0, "worker": 0, "verify": 0,
-             "integration": 0, "summarize": 0, "replan": 0}
+             "integration": 0, "summarize": 0, "replan": 0, "falsify": 0}
 
     async def fake_write(node, ctx):
         calls["dod_write"] += 1
@@ -33,6 +33,12 @@ def stub(monkeypatch):
         calls["integration"] += 1
         return _dod()
 
+    async def fake_falsify(node, ctx):
+        # falsification is covered in test_end_to_end_fake_llm; these tests isolate the
+        # verdict control flow, so the dod_rewrite count must mean "inadequate checks" only
+        calls["falsify"] += 1
+        return node.dod
+
     async def fake_worker(node, ctx, attempt=1, failing="", findings=""):
         calls["worker"] += 1
         return WorkerOutcome(status="done", summary="built it", claimed_done=True)
@@ -44,6 +50,7 @@ def stub(monkeypatch):
     monkeypatch.setattr(dod_writer, "write", fake_write)
     monkeypatch.setattr(dod_writer, "rewrite", fake_rewrite)
     monkeypatch.setattr(dod_writer, "integration_checks", fake_integration)
+    monkeypatch.setattr(dod_writer, "falsify", fake_falsify)
     monkeypatch.setattr(worker, "execute", fake_worker)
     monkeypatch.setattr(solver, "summarize", fake_summarize)
     return calls

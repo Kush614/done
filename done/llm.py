@@ -227,6 +227,31 @@ def parse_json_lenient(text: str) -> dict:
             return value
         if isinstance(value, list):
             return {"items": value}
+    return _repair_truncated(text)
+
+
+def _repair_truncated(text: str) -> dict:
+    """A model that hits max_tokens leaves an unclosed object. Close it and salvage the
+    fields that did arrive, rather than discarding the whole ruling."""
+    start = text.find("{")
+    if start < 0:
+        return {}
+    body = text[start:]
+    for trim in range(0, min(len(body), 400)):
+        candidate = body[: len(body) - trim] if trim else body
+        # drop a dangling partial token, then close what is still open
+        candidate = candidate.rstrip().rstrip(",")
+        opens = candidate.count("{") - candidate.count("}")
+        brackets = candidate.count("[") - candidate.count("]")
+        if candidate.count('"') % 2:
+            candidate += '"'
+        candidate += "]" * max(0, brackets) + "}" * max(0, opens)
+        try:
+            value = json.loads(candidate)
+        except json.JSONDecodeError:
+            continue
+        if isinstance(value, dict):
+            return value
     return {}
 
 

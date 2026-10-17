@@ -135,6 +135,9 @@ async def _execute(node: Node, ctx) -> Node:
     ctx.enter(node)
     try:
         node.dod = await dod_writer.write(node, ctx)       # the checks exist BEFORE the work does
+        # ...and are falsified against the empty workspace before the work begins: a check that
+        # already passes is a tautology, one that errors is broken.
+        node.dod = await dod_writer.falsify(node, ctx)
     except llm.BudgetExhausted as exc:
         return _stop(node, ctx, f"out of budget before writing a definition of done: {exc}")
     ctx.trace.node_update(node)
